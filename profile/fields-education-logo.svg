@@ -14,7 +14,7 @@
 
     @media (prefers-color-scheme: dark) {
       .fill-text {
-        fill: #fff;
+        fill: rgb(240, 246, 252);
       }
     }
   </style>
