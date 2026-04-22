@@ -11,6 +11,12 @@
     .fill-text {
       fill: oklch(25% 0.0749 260.78);
     }
+
+    @media (prefers-color-scheme: dark) {
+      .fill-text {
+        fill: #fff;
+      }
+    }
   </style>
   <g>
     <path class="fill-primary" d="M34.048 0H2.372C1.062 0 0 1.05 0 2.345v31.31C0 34.95 1.062 36 2.372 36h31.676c1.31 0 1.952-.705 1.952-2V2c0-1.295-.642-2-1.952-2Z"/>
