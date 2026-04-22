@@ -22,7 +22,7 @@ No custom skip step is included on purpose.
 - `WARDEN_MODEL` can come from either an org variable or org secret
 - `WARDEN_SENTRY_DSN` can come from either an org variable or org secret
 - `ANTHROPIC_BASE_URL` stays externalized as an Actions variable
-- if `WARDEN_APP_ID` and `WARDEN_PRIVATE_KEY` are present, the workflow uses a GitHub App token
+- if `WARDEN_APP_CLIENT_ID` and `WARDEN_PRIVATE_KEY` are present, the workflow uses a GitHub App token
 - if those app secrets are not present yet, the workflow falls back to `GITHUB_TOKEN` with the same write permissions the local workflow used
 
 An org-installed GitHub App for Warden already exists, so a new app does not need to be created or installed. The remaining GitHub App setup is to store that app's credentials as org Actions secrets.
@@ -35,7 +35,7 @@ Expected org-level configuration:
 - Variable: `WARDEN_MODEL` (optional, recommended if you want a pinned org-wide model)
 - Secret: `WARDEN_SENTRY_DSN` (optional, recommended)
 - Variable: `ANTHROPIC_BASE_URL` (required for the custom gateway override)
-- Secret: `WARDEN_APP_ID` (recommended)
+- Variable: `WARDEN_APP_CLIENT_ID` (recommended)
 - Secret: `WARDEN_PRIVATE_KEY` (recommended)
 
 Notes:
@@ -43,7 +43,7 @@ Notes:
 - GitHub does not allow reading existing secret values back out, so moving repo-level secrets to org-level requires setting the org secrets with the same values manually.
 - `ANTHROPIC_BASE_URL` should be copied from the current repo-level variable into the org-level variable with the same name.
 - `WARDEN_MODEL` is optional from Warden's perspective. Keeping it set as an org variable is a good way to pin model behavior org-wide and avoid unexpected default-model changes.
-- GitHub App IDs are identifiers, not credentials. The private key is the sensitive part and must stay in `WARDEN_PRIVATE_KEY`.
+- GitHub App client IDs are identifiers, not credentials. The private key is the sensitive part and must stay in `WARDEN_PRIVATE_KEY`.
 
 ## Ruleset
 

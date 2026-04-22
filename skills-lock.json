@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "gha-security-review": {
+      "source": "getsentry/skills",
+      "sourceType": "github",
+      "computedHash": "b506580c0c826ed2a5e3e97835eaaa0b3133ba269029ec5213257f5d7cf57f29"
+    }
+  }
+}

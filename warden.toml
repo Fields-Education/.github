@@ -1,0 +1,54 @@
+version = 1
+
+[defaults]
+failOn = "high"
+reportOn = "medium"
+failCheck = true
+requestChanges = false
+maxFindings = 20
+
+[defaults.chunking]
+
+[[defaults.chunking.filePatterns]]
+pattern = "profile/**"
+mode = "whole-file"
+
+[[defaults.chunking.filePatterns]]
+pattern = ".github/workflows/**"
+mode = "whole-file"
+
+[[defaults.chunking.filePatterns]]
+pattern = ".github/actions/**"
+mode = "whole-file"
+
+[[defaults.chunking.filePatterns]]
+pattern = "action.yml"
+mode = "whole-file"
+
+[[defaults.chunking.filePatterns]]
+pattern = "action.yaml"
+mode = "whole-file"
+
+[[skills]]
+name = "org-profile-review"
+paths = ["profile/**"]
+
+[[skills.triggers]]
+type = "pull_request"
+actions = ["opened", "synchronize", "reopened"]
+
+[[skills]]
+name = "gha-security-review"
+paths = [
+  ".github/workflows/*.yml",
+  ".github/workflows/*.yaml",
+  ".github/actions/**",
+  "action.yml",
+  "action.yaml",
+  "AGENTS.md",
+  "CLAUDE.md",
+]
+
+[[skills.triggers]]
+type = "pull_request"
+actions = ["opened", "synchronize", "reopened"]

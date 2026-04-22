@@ -1,0 +1,34 @@
+# Conform configuration for PR title validation in this repository.
+# See: https://github.com/siderolabs/conform
+
+policies:
+  - type: commit
+    spec:
+      header:
+        length: 72
+        imperative: false
+        case: lower
+        invalidLastCharacters: .
+      body:
+        required: false
+      dco: false
+      gpg:
+        required: false
+      spellcheck:
+        locale: US
+      maximumOfOneCommit: false
+      conventional:
+        types:
+          - feat
+          - fix
+          - perf
+          - refactor
+          - docs
+          - build
+          - ci
+          - test
+          - chore
+          - revert
+        scopes:
+          - .*
+        descriptionLength: 72
