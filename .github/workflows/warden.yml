@@ -27,39 +27,6 @@ jobs:
           private-key: ${{ secrets.WARDEN_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - name: Probe Anthropic-compatible gateway
-        id: anthropic-probe
-        continue-on-error: true
-        env:
-          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
-          WARDEN_ANTHROPIC_API_KEY: ${{ secrets.WARDEN_ANTHROPIC_API_KEY }}
-          WARDEN_MODEL: ${{ vars.WARDEN_MODEL || secrets.WARDEN_MODEL }}
-        run: |
-          set -euo pipefail
-          status="$(curl -sS -o /tmp/anthropic-probe.json -w '%{http_code}' \
-            "${ANTHROPIC_BASE_URL%/}/v1/messages" \
-            -H "x-api-key: ${WARDEN_ANTHROPIC_API_KEY}" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            -d "{\"model\":\"${WARDEN_MODEL}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"reply with ok\"}]}" )"
-          echo "Gateway probe HTTP status: ${status}"
-          cat /tmp/anthropic-probe.json
-          if [ "${status}" -lt 200 ] || [ "${status}" -ge 300 ]; then
-            exit 1
-          fi
-
-      - name: Probe Claude Code via gateway
-        id: claude-probe
-        continue-on-error: true
-        env:
-          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.WARDEN_ANTHROPIC_API_KEY }}
-        run: |
-          set -euo pipefail
-          CLAUDE_CODE_VERSION="2.1.32"
-          curl -fsSL https://claude.ai/install.sh | bash -s -- "$CLAUDE_CODE_VERSION"
-          "$HOME/.local/bin/claude" --model claude-haiku-4-5 -p "Hello Claude"
-
       - uses: getsentry/warden@3fcaf99ad07de75be2fc8c660e3106d4344aba25 # v0.20.0
         env:
           ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
