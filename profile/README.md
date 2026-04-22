@@ -39,4 +39,8 @@ Fields Education Inc. builds language learning and cross-cultural experiences th
 - Fields Classroom: [fields.app](https://fields.app)
 - Fields Marketplace: [fields.org](https://fields.org)
 - GitHub: [Fields-Education](https://github.com/Fields-Education)
+- Instagram: [@FieldsEducation](https://www.instagram.com/FieldsEducation)
+- Threads: [@FieldsEducation](https://www.threads.com/@FieldsEducation)
+- TikTok: [@fieldseducation](https://www.tiktok.com/@fieldseducation)
+- X: [@FieldsEducation](https://x.com/FieldsEducation)
 - Email: [support@joinfields.org](mailto:support@joinfields.org)
