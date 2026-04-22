@@ -19,11 +19,18 @@ This skill encodes attack patterns from real GitHub Actions exploits — not gen
 
 Review the workflows provided (file, diff, or repo). Research the codebase as needed to trace complete attack paths before reporting.
 
+Reason about the full workflow graph, not just one file at a time. The dangerous trigger, effective permissions, and attacker-controlled execution step may be separated across:
+
+- entry workflows in `.github/workflows/`
+- local reusable workflows called via `workflow_call`
+- local composite actions under `.github/actions/`
+- scripts, config files, or local actions executed after checkout
+
 ### Files to Review
 
-- `.github/workflows/*.yml` — all workflow definitions
+- `.github/workflows/*.yml` and `.github/workflows/*.yaml` — all workflow definitions, including reusable workflows
 - `action.yml` / `action.yaml` — composite actions in the repo
-- `.github/actions/*/action.yml` — local reusable actions
+- `.github/actions/*/action.yml` and `.github/actions/*/action.yaml` — local reusable actions
 - Config files loaded by workflows: `CLAUDE.md`, `AGENTS.md`, `Makefile`, shell scripts under `.github/`
 
 ### Out of Scope
@@ -31,9 +38,13 @@ Review the workflows provided (file, diff, or repo). Research the codebase as ne
 - Workflows in other repositories (only note the dependency)
 - GitHub App installation permissions (note if relevant)
 
+If a caller references an external reusable workflow you cannot inspect, reason from the caller-visible trigger, permissions, ref, and inputs only. Do not assert callee-only behavior you cannot verify.
+
 ## Threat Model
 
 Only report vulnerabilities exploitable by an **external attacker** — someone **without** write access to the repository. The attacker can open PRs from forks, create issues, and post comments. They cannot push to branches, trigger `workflow_dispatch`, or trigger manual workflows.
+
+The primary high-confidence signal is not a privileged trigger by itself. It is a privileged workflow context paired with downstream checkout, materialization, or execution of PR-controlled refs, artifacts, caches, scripts, or local actions.
 
 **Do not flag** vulnerabilities that require write access to exploit:
 - `workflow_dispatch` input injection — requires write access to trigger
@@ -81,14 +92,32 @@ For each workflow, identify triggers and load the appropriate reference:
 
 Load references selectively — only what's relevant to the triggers found.
 
+## Step 1.5: Build the Execution Graph
+
+Before scoring findings, trace the execution chain across local workflow boundaries:
+
+- identify entry workflows that an external attacker can influence
+- follow local `uses: ./.github/workflows/...` and `uses: ./.github/actions/...` edges
+- carry the effective trigger trust and token/secret scope from caller to callee
+- look for PR-controlled refs, merge refs, artifacts, caches, scripts, or config being materialized anywhere downstream
+- if the trigger is introduced in one file and unsafe checkout or execution happens in another, treat that as one attack path
+
+Broad permissions are an impact amplifier, not the root issue. Increase severity when permissions are broad, but do not report a high-confidence exploit unless attacker-controlled execution or materialization is also present.
+
 ## Step 2: Check for Vulnerability Classes
 
-### Check 1: Pwn Request
+### Check 1: Privileged PR Context + PR-Controlled Materialization
 
-Does the workflow use `pull_request_target` AND check out fork code?
-- Look for `actions/checkout` with `ref:` pointing to PR head
-- Look for local actions (`./.github/actions/`) that would come from the fork
-- Check if any `run:` step executes code from the checked-out PR
+Does a privileged PR-triggered workflow context later consume PR-controlled refs, artifacts, caches, scripts, or local actions?
+
+- Look for `pull_request_target` or similarly privileged PR entrypoints
+- Look across local reusable workflow and local action boundaries, not just within one file
+- Look for `actions/checkout` with `ref:` pointing to PR head, PR ref, or merge ref
+- Look for local actions (`./.github/actions/`) or scripts that are executed from a PR-controlled checkout
+- Look for artifact, cache, or generated-file handoffs from untrusted PR execution into a privileged workflow
+- Check if any downstream `run:` step, local action, or config load executes attacker-controlled content after the privileged context is established
+
+Do not treat `pull_request_target` alone as a HIGH finding. The higher-confidence issue is privileged execution paired with attacker-controlled materialization later in the graph.
 
 ### Check 2: Expression Injection
 
@@ -124,6 +153,10 @@ Are third-party actions securely pinned?
 
 Are workflow permissions minimal? Are secrets properly scoped?
 
+- treat broad permissions as an exploit amplifier
+- check whether broader-than-needed permissions are defined in the entry workflow while unsafe execution happens in a called workflow or local action
+- unnecessary privileged trigger modes are suspicious, but are not by themselves a complete exploit path
+
 ### Check 8: Runner Infrastructure
 
 Are self-hosted runners, caches, or artifacts used securely?
@@ -134,7 +167,7 @@ Before reporting, check if the pattern is actually safe:
 
 | Pattern | Why Safe |
 |---|---|
-| `pull_request_target` WITHOUT checkout of fork code | Never executes attacker code |
+| `pull_request_target` WITHOUT downstream checkout or materialization of PR-controlled refs/artifacts | Never executes attacker code |
 | `${{ github.event.pull_request.number }}` in `run:` | Numeric only — not injectable |
 | `${{ github.repository }}` / `github.repository_owner` | Repo owner controls this |
 | `${{ secrets.* }}` | Not an expression injection vector |
@@ -150,11 +183,12 @@ Before reporting, check if the pattern is actually safe:
 
 Before including any finding, read the actual workflow YAML and trace the complete attack path:
 
-1. **Read the full workflow** — don't rely on grep output alone
-2. **Trace the trigger** — confirm the event and check `if:` conditions that gate execution
-3. **Trace the expression/checkout** — confirm it's in a `run:` block or actually references fork code
-4. **Confirm attacker control** — verify the value maps to something an external attacker sets
-5. **Check existing mitigations** — env var wrapping, author_association checks, restricted permissions, SHA pinning
+1. **Read the full workflow graph** — don't rely on grep output alone
+2. **Trace the trigger and trust boundary** — confirm the event and check `if:` conditions that gate execution
+3. **Trace checkout/materialization across files** — follow local `workflow_call` and local action edges to find where attacker-controlled content is actually consumed
+4. **Confirm attacker control** — verify the ref, artifact, cache, comment body, title, branch name, or config is externally controllable
+5. **Map permissions and secrets at each hop** — broad scope can raise severity, but should not substitute for a real execution path
+6. **Check existing mitigations** — env var wrapping, author_association checks, restricted permissions, SHA pinning
 
 If any link is broken, mark MEDIUM (needs verification) or drop the finding.
 
