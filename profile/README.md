@@ -38,4 +38,5 @@ Fields Education Inc. builds language learning and cross-cultural experiences th
 - Website: [joinfields.org](https://joinfields.org)
 - Fields Classroom: [fields.app](https://fields.app)
 - Fields Marketplace: [fields.org](https://fields.org)
+- GitHub: [Fields-Education](https://github.com/Fields-Education)
 - Email: [support@joinfields.org](mailto:support@joinfields.org)
