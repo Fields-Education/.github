@@ -48,6 +48,18 @@ jobs:
             exit 1
           fi
 
+      - name: Probe Claude Code via gateway
+        id: claude-probe
+        continue-on-error: true
+        env:
+          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.WARDEN_ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          CLAUDE_CODE_VERSION="2.1.32"
+          curl -fsSL https://claude.ai/install.sh | bash -s -- "$CLAUDE_CODE_VERSION"
+          "$HOME/.local/bin/claude" --model claude-haiku-4-5 -p "Hello Claude"
+
       - uses: getsentry/warden@3fcaf99ad07de75be2fc8c660e3106d4344aba25 # v0.20.0
         env:
           ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
