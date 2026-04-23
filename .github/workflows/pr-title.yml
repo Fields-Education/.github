@@ -16,16 +16,52 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          filter: blob:none
           fetch-depth: 1
+          sparse-checkout: |
+            .conform.yaml
+            .conform.yml
+          sparse-checkout-cone-mode: false
 
-      - name: Setup mise
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install: true
+      - name: Prepare Conform config
+        id: conform-config
+        run: |
+          set -euo pipefail
+          if [ -f .conform.yaml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -f .conform.yml ]; then
+            cp .conform.yml .conform.yaml
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - name: Skip when no Conform config exists
+        if: steps.conform-config.outputs.exists != 'true'
+        run: echo "No .conform.yaml or .conform.yml found; skipping PR title validation."
+
+      - name: Install conform
+        if: steps.conform-config.outputs.exists == 'true'
+        env:
+          CONFORM_VERSION: v0.1.0-alpha.31
+          CONFORM_SHA256: 344dd5fad42c61bf739491b490d453943d06f9aaed5488a738c0bbd4588b6914
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/conform" "https://github.com/siderolabs/conform/releases/download/${CONFORM_VERSION}/conform-linux-amd64"
+          echo "${CONFORM_SHA256}  $HOME/.local/bin/conform" | sha256sum -c -
+          chmod +x "$HOME/.local/bin/conform"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Validate PR title
+        if: steps.conform-config.outputs.exists == 'true'
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          printf '%s\n' "$PR_TITLE" > .git/pr-title.txt
-          conform enforce --commit-msg-file .git/pr-title.txt
+          tmp_file="${RUNNER_TEMP}/pr-title.txt"
+          printf '%s\n' "$PR_TITLE" > "$tmp_file"
+          conform enforce --commit-msg-file "$tmp_file"
