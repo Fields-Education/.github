@@ -14,18 +14,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 1
-
-      - name: Detect Conform config
+      - name: Fetch Conform config
         id: conform-config
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -f .conform.yaml ] || [ -f .conform.yml ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          for config_name in .conform.yaml .conform.yml; do
+            tmp_file="$(mktemp)"
+            status="$(curl -sSL -o "$tmp_file" -w '%{http_code}' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github.raw" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/${config_name}?ref=${GITHUB_SHA}")"
+            if [ "$status" = "200" ]; then
+              mv "$tmp_file" .conform.yaml
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            rm -f "$tmp_file"
+          done
+          echo "exists=false" >> "$GITHUB_OUTPUT"
 
       - name: Skip when no Conform config exists
         if: steps.conform-config.outputs.exists != 'true'
