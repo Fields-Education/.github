@@ -18,12 +18,34 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup mise
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install: true
+      - name: Detect Conform config
+        id: conform-config
+        run: |
+          if [ -f .conform.yaml ] || [ -f .conform.yml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip when no Conform config exists
+        if: steps.conform-config.outputs.exists != 'true'
+        run: echo "No .conform.yaml or .conform.yml found; skipping PR title validation."
+
+      - name: Install conform
+        if: steps.conform-config.outputs.exists == 'true'
+        env:
+          CONFORM_VERSION: v0.1.0-alpha.31
+          CONFORM_SHA256: 344dd5fad42c61bf739491b490d453943d06f9aaed5488a738c0bbd4588b6914
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/conform" "https://github.com/siderolabs/conform/releases/download/${CONFORM_VERSION}/conform-linux-amd64"
+          echo "${CONFORM_SHA256}  $HOME/.local/bin/conform" | sha256sum -c -
+          chmod +x "$HOME/.local/bin/conform"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Validate PR title
+        if: steps.conform-config.outputs.exists == 'true'
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
