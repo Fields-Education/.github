@@ -22,11 +22,10 @@ jobs:
           set -euo pipefail
           for config_name in .conform.yaml .conform.yml; do
             tmp_file="$(mktemp)"
-            status="$(curl -sSL -o "$tmp_file" -w '%{http_code}' \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
+            if gh api \
               -H "Accept: application/vnd.github.raw" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/${config_name}?ref=${GITHUB_SHA}")"
-            if [ "$status" = "200" ]; then
+              "repos/${GITHUB_REPOSITORY}/contents/${config_name}?ref=${GITHUB_SHA}" \
+              > "$tmp_file" 2>/dev/null; then
               mv "$tmp_file" .conform.yaml
               echo "exists=true" >> "$GITHUB_OUTPUT"
               exit 0
