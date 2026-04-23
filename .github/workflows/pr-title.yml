@@ -56,5 +56,6 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          printf '%s\n' "$PR_TITLE" > .git/pr-title.txt
-          conform enforce --commit-msg-file .git/pr-title.txt
+          tmp_file="${RUNNER_TEMP}/pr-title.txt"
+          printf '%s\n' "$PR_TITLE" > "$tmp_file"
+          conform enforce --commit-msg-file "$tmp_file"
