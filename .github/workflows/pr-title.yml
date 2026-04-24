@@ -19,30 +19,174 @@ jobs:
           filter: blob:none
           fetch-depth: 1
           sparse-checkout: |
+            .conform-pr-title.yaml
+            .conform-pr-title.yml
             .conform.yaml
             .conform.yml
           sparse-checkout-cone-mode: false
 
-      - name: Prepare Conform config
+      - name: Prepare PR title Conform config
         id: conform-config
         run: |
           set -euo pipefail
+
+          write_fallback_config() {
+            cat > .conform.yaml <<'EOF'
+          policies:
+            - type: commit
+              spec:
+                header:
+                  length: 89
+                  imperative: false
+                  case: lower
+                  invalidLastCharacters: .
+                conventional:
+                  types:
+                    - feat
+                    - fix
+                    - perf
+                    - refactor
+                    - docs
+                    - style
+                    - test
+                    - build
+                    - ci
+                    - chore
+                    - revert
+                  scopes:
+                    - .*
+                  descriptionLength: 89
+          EOF
+          }
+
+          if [ -f .conform-pr-title.yaml ]; then
+            cp .conform-pr-title.yaml .conform.yaml
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "mode=dedicated" >> "$GITHUB_OUTPUT"
+            echo "source=.conform-pr-title.yaml" >> "$GITHUB_OUTPUT"
+            echo "Using dedicated PR title Conform config from .conform-pr-title.yaml"
+            exit 0
+          fi
+
+          if [ -f .conform-pr-title.yml ]; then
+            cp .conform-pr-title.yml .conform.yaml
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "mode=dedicated" >> "$GITHUB_OUTPUT"
+            echo "source=.conform-pr-title.yml" >> "$GITHUB_OUTPUT"
+            echo "Using dedicated PR title Conform config from .conform-pr-title.yml"
+            exit 0
+          fi
+
+          source_file=""
           if [ -f .conform.yaml ]; then
+            source_file=".conform.yaml"
+          elif [ -f .conform.yml ]; then
+            source_file=".conform.yml"
+          fi
+
+          if [ -z "$source_file" ]; then
+            write_fallback_config
             echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "mode=fallback" >> "$GITHUB_OUTPUT"
+            echo "source=shared-default" >> "$GITHUB_OUTPUT"
+            echo "Using shared default PR title Conform config. Add .conform-pr-title.yaml for repo-specific title rules, or add .conform.yaml/.yml to derive rules from your commit policy."
             exit 0
           fi
 
-          if [ -f .conform.yml ]; then
-            cp .conform.yml .conform.yaml
+          if ruby - "$source_file" .conform.yaml <<'RUBY'
+          require "yaml"
+
+          source = ARGV.fetch(0)
+          target = ARGV.fetch(1)
+
+          def filter_hash(hash, allowed_keys)
+            allowed_keys.each_with_object({}) do |key, filtered|
+              filtered[key] = hash[key] if hash.key?(key)
+            end
+          end
+
+          config = YAML.safe_load(
+            File.read(source),
+            permitted_classes: [],
+            permitted_symbols: [],
+            aliases: true,
+            filename: source,
+            fallback: {},
+          ) || {}
+
+          ignored = []
+          policies = Array(config["policies"]).each_with_object([]) do |policy, derived_policies|
+            next unless policy.is_a?(Hash)
+
+            type = policy["type"]
+            if type != "commit"
+              ignored << "policy type #{type.inspect}"
+              next
+            end
+
+            spec = policy["spec"]
+            next unless spec.is_a?(Hash)
+
+            derived = {}
+
+            if (header = spec["header"]).is_a?(Hash)
+              filtered_header = filter_hash(header, %w[length imperative case invalidLastCharacters jira])
+              derived["header"] = filtered_header unless filtered_header.empty?
+
+              ignored_header = header.keys - filtered_header.keys
+              ignored.concat(ignored_header.sort.map { |key| "header.#{key}" })
+            end
+
+            if (conventional = spec["conventional"]).is_a?(Hash) && !conventional.empty?
+              derived["conventional"] = conventional
+            end
+
+            if (spellcheck = spec["spellcheck"]).is_a?(Hash) && !spellcheck.empty?
+              derived["spellcheck"] = spellcheck
+            end
+
+            ignored_top_level = spec.keys - %w[header conventional spellcheck body dco gpg maximumOfOneCommit]
+            ignored.concat(%w[body dco gpg maximumOfOneCommit].select { |key| spec.key?(key) })
+            ignored.concat(ignored_top_level.sort)
+
+            next if derived.empty?
+
+            derived_policies << {
+              "type" => "commit",
+              "spec" => derived,
+            }
+          end
+
+          if policies.empty?
+            warn "No title-safe commit rules found in #{source}"
+            exit 3
+          end
+
+          File.write(target, { "policies" => policies }.to_yaml)
+
+          ignored.uniq.sort.each do |entry|
+            warn "Ignoring #{entry} for PR title validation"
+          end
+          RUBY
+          then
             echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "mode=derived" >> "$GITHUB_OUTPUT"
+            echo "source=$source_file" >> "$GITHUB_OUTPUT"
+            echo "Derived PR title Conform config from $source_file"
             exit 0
           fi
 
-          echo "exists=false" >> "$GITHUB_OUTPUT"
+          ruby_status=$?
+          if [ "$ruby_status" -ne 3 ]; then
+            exit "$ruby_status"
+          fi
 
-      - name: Skip when no Conform config exists
-        if: steps.conform-config.outputs.exists != 'true'
-        run: echo "No .conform.yaml or .conform.yml found; skipping PR title validation."
+          write_fallback_config
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          echo "mode=fallback" >> "$GITHUB_OUTPUT"
+          echo "source=$source_file" >> "$GITHUB_OUTPUT"
+          echo "Using shared default PR title Conform config because $source_file does not define title-safe commit rules. Add .conform-pr-title.yaml for repo-specific title rules, or update .conform.yaml/.yml to derive PR title rules from commit policy."
+          exit 0
 
       - name: Install conform
         if: steps.conform-config.outputs.exists == 'true'
