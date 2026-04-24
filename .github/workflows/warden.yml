@@ -16,7 +16,13 @@ permissions:
 
 jobs:
   warden:
-    if: github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (
+        github.event.pull_request.user.type != 'Bot' ||
+        contains(fromJSON('["fields-grove[bot]","fields-education-triage-autofixer[bot]"]'), github.event.pull_request.user.login) ||
+        contains(github.event.pull_request.user.login, 'opencode')
+      )
     runs-on: ubuntu-latest
     env:
       WARDEN_MODEL: ${{ vars.WARDEN_MODEL || secrets.WARDEN_MODEL }}
