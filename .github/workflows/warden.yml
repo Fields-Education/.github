@@ -2,7 +2,11 @@ name: Warden
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -12,6 +16,7 @@ permissions:
 
 jobs:
   warden:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     env:
       WARDEN_MODEL: ${{ vars.WARDEN_MODEL || secrets.WARDEN_MODEL }}
