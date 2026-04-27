@@ -2,7 +2,7 @@
 
 ## Overview
 
-A "pwn request" occurs when a privileged PR workflow context eventually checks out or executes attacker-controlled PR content. The `pull_request_target` trigger runs with the **target repository's permissions and secrets**, but the dangerous checkout or execution step may happen later, including inside a local reusable workflow, local composite action, or script loaded from the checkout.
+A "pwn request" occurs when a `pull_request_target` workflow checks out and executes code from a fork PR. The `pull_request_target` trigger runs with the **target repository's permissions and secrets**, but if it checks out the fork's code, the attacker's code runs with those elevated privileges.
 
 ---
 
@@ -25,9 +25,9 @@ jobs:
 ```
 
 The key elements:
-1. A privileged PR-triggered context grants target repo permissions/secrets
-2. Some later step materializes attacker-controlled PR content (head ref, merge ref, artifact, cache, or local action/script from the checkout)
-3. A downstream `run:` step, local action, or config load executes that attacker-controlled content
+1. `pull_request_target` grants target repo permissions/secrets
+2. `actions/checkout` with `ref:` pointing to the PR head checks out **fork code**
+3. Any `run:` step after checkout executes attacker-controlled code
 
 ---
 
@@ -98,37 +98,6 @@ runs:
 
 **Real-world:** Used against trivy (25k+ stars). The attacker modified `.github/actions/setup-go/action.yaml` to inject a payload. The "Set up Go" step took 5+ minutes (vs. normal seconds), and the stolen PAT was used to rename the repo, delete releases, and push malicious artifacts.
 
-### Reusable Workflow Boundary
-
-The privileged trigger and the dangerous checkout do not need to be in the same file:
-
-```yaml
-# Caller workflow (privileged context)
-on: pull_request_target
-permissions:
-  contents: write
-jobs:
-  review:
-    uses: ./.github/workflows/review.yml
-```
-
-```yaml
-# Called reusable workflow (dangerous materialization)
-on:
-  workflow_call:
-
-jobs:
-  run-review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - run: ./scripts/review.sh
-```
-
-This is still a pwn request path. The privileged trigger in the caller and the unsafe checkout in the callee combine into one exploit chain.
-
 ### Makefile / Shell Script Override
 
 If the workflow runs `make` or a shell script from the checkout:
@@ -149,14 +118,11 @@ all:
 # Find pull_request_target workflows
 grep -rn "pull_request_target" .github/workflows/
 
-# Check if they checkout fork code or PR refs directly
-grep -A 20 "pull_request_target" .github/workflows/*.yml | grep -E "ref:.*(pull_request\.(head\.sha|head\.ref)|refs/pull/.*/merge)"
+# Check if they checkout fork code
+grep -A 20 "pull_request_target" .github/workflows/*.yml | grep -E "ref:.*pull_request\.(head\.sha|head\.ref)"
 
 # Check for local action usage (could be overridden by fork)
 grep -rn "uses: \.\/" .github/workflows/
-
-# Check for local reusable workflows that may hide the unsafe checkout in another file
-grep -rn "uses: \.\/\.github/workflows/" .github/workflows/
 
 # Check what runs after checkout
 grep -A 50 "actions/checkout" .github/workflows/*.yml | grep -E "^[[:space:]]*- run:"
@@ -207,7 +173,7 @@ jobs:
       # Deploy using trusted code + secrets
 ```
 
-### Safe Pattern: pull_request_target Without Materialization
+### Safe Pattern: pull_request_target Without Checkout
 
 ```yaml
 # SAFE: pull_request_target that only reads PR metadata
@@ -219,7 +185,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/labeler@v5  # Only reads PR metadata
-      # No checkout/materialization of PR-controlled content — attacker can't execute anything
+      # No checkout of fork code — attacker can't execute anything
 ```
 
 ---

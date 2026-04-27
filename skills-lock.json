@@ -5,6 +5,21 @@
       "source": "getsentry/skills",
       "sourceType": "github",
       "computedHash": "b506580c0c826ed2a5e3e97835eaaa0b3133ba269029ec5213257f5d7cf57f29"
+    },
+    "iterate-pr": {
+      "source": "getsentry/skills",
+      "sourceType": "github",
+      "computedHash": "bc7a26e084f18e477d624a201fd8f69b283632decef2eb92f8966d67d2b3627f"
+    },
+    "warden": {
+      "source": "getsentry/warden",
+      "sourceType": "github",
+      "computedHash": "1eee680690c2e328c57389f9ed4ecc682a20193686c2d1d8c649845d0bd4bbac"
+    },
+    "warden-sweep": {
+      "source": "getsentry/warden",
+      "sourceType": "github",
+      "computedHash": "ac4f145a6f999fab2225acebe58a7b5e060299434996edcd04cc33b05ef7aa41"
     }
   }
 }
