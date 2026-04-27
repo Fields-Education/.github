@@ -37,7 +37,7 @@ jobs:
 
       - uses: getsentry/warden@a7f3c5328550d9eda9bdf0e882bb09f14b82fab3 # v0.21.0
         env:
-          ANTHROPIC_API_KEY: {{ secrets.WARDEN_API_KEY || secrets.WARDEN_ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.WARDEN_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ vars.WARDEN_BASE_URL || vars.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ vars.WARDEN_MODEL }}
           ANTHROPIC_SMALL_FAST_MODEL: ${{ vars.WARDEN_SMALL_FAST_MODEL }}
@@ -46,8 +46,8 @@ jobs:
           ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.WARDEN_DEFAULT_OPUS_MODEL }}
           WARDEN_MODEL: ${{ vars.WARDEN_MODEL }}
           WARDEN_SENTRY_DSN: ${{ secrets.WARDEN_SENTRY_DSN }}
-          WARDEN_ANTHROPIC_API_KEY: {{ secrets.WARDEN_API_KEY || secrets.WARDEN_ANTHROPIC_API_KEY }}
+          WARDEN_ANTHROPIC_API_KEY: ${{ secrets.WARDEN_API_KEY }}
         with:
-          anthropic-api-key: ${{ secrets.WARDEN_API_KEY || secrets.WARDEN_ANTHROPIC_API_KEY }} # warden_antrhopic is the old key through opencode zen
+          anthropic-api-key: ${{ secrets.WARDEN_API_KEY }} # warden_antrhopic is the old key through opencode zen
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           request-changes: true
