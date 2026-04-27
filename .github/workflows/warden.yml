@@ -35,7 +35,7 @@ jobs:
           private-key: ${{ secrets.WARDEN_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - uses: getsentry/warden@2795626e8f1ff3c5a7a041d0ecb9ae3c047641cd # v0.21.0
+      - uses: getsentry/warden@a7f3c5328550d9eda9bdf0e882bb09f14b82fab3 # v0.21.0
         env:
           ANTHROPIC_BASE_URL: ${{ vars.WARDEN_BASE_URL || vars.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ vars.WARDEN_MODEL }}
