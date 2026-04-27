@@ -48,3 +48,4 @@ jobs:
         with:
           anthropic-api-key: ${{ secrets.WARDEN_API_KEY || secrets.WARDEN_ANTHROPIC_API_KEY }} # warden_antrhopic is the old key through opencode zen
           github-token: ${{ steps.app-token.outputs.token || github.token }}
+          request-changes: true
