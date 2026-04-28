@@ -23,7 +23,7 @@ jobs:
         contains(fromJSON('["fields-grove[bot]","fields-education-triage-autofixer[bot]"]'), github.event.pull_request.user.login) ||
         contains(github.event.pull_request.user.login, 'opencode')
       )
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
