@@ -1,25 +1,35 @@
 {
   "version": 1,
   "skills": {
+    "agent-prompt": {
+      "source": "getsentry/warden",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/agent-prompt/SKILL.md",
+      "computedHash": "f5acf6829bab5700ec20ca3668f8701323d79b32a08593d8f4c801bd0fc384a5"
+    },
     "gha-security-review": {
       "source": "getsentry/skills",
       "sourceType": "github",
+      "skillPath": "skills/gha-security-review/SKILL.md",
       "computedHash": "b506580c0c826ed2a5e3e97835eaaa0b3133ba269029ec5213257f5d7cf57f29"
     },
     "iterate-pr": {
       "source": "getsentry/skills",
       "sourceType": "github",
+      "skillPath": "skills/iterate-pr/SKILL.md",
       "computedHash": "bc7a26e084f18e477d624a201fd8f69b283632decef2eb92f8966d67d2b3627f"
     },
     "warden": {
       "source": "getsentry/warden",
       "sourceType": "github",
-      "computedHash": "1eee680690c2e328c57389f9ed4ecc682a20193686c2d1d8c649845d0bd4bbac"
+      "skillPath": "skills/warden/SKILL.md",
+      "computedHash": "aaa4c717622a78aa8183e75a75919fc5678d6068652ad66074cad25bada74f1a"
     },
     "warden-sweep": {
       "source": "getsentry/warden",
       "sourceType": "github",
-      "computedHash": "ac4f145a6f999fab2225acebe58a7b5e060299434996edcd04cc33b05ef7aa41"
+      "skillPath": "skills/warden-sweep/SKILL.md",
+      "computedHash": "5470e8dae225a8123a170fdf4a7f36e6a8ce451c69d2243f1237b4ef6d91e761"
     }
   }
 }
