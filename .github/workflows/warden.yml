@@ -24,6 +24,7 @@ jobs:
         contains(github.event.pull_request.user.login, 'opencode')
       )
     runs-on: blacksmith-16vcpu-ubuntu-2404
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -36,6 +37,8 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - uses: getsentry/warden@7f14604458ad99a7221ac4608dcd9e9ae843d05e # v0.22.0
+        id: warden
+        timeout-minutes: 60
         env:
           ANTHROPIC_API_KEY: ${{ secrets.WARDEN_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ vars.WARDEN_BASE_URL || vars.ANTHROPIC_BASE_URL }}
@@ -51,4 +54,49 @@ jobs:
           anthropic-api-key: ${{ secrets.WARDEN_API_KEY }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           request-changes: true
-          parallel: 16
+          parallel: 8
+
+  cleanup-warden-checks:
+    if: ${{ always() && needs.warden.result != 'success' && needs.warden.result != 'skipped' }}
+    needs: warden
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        if: ${{ vars.WARDEN_APP_CLIENT_ID != '' }}
+        id: cleanup-token
+        with:
+          client-id: ${{ vars.WARDEN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.WARDEN_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Complete stale Warden checks
+        env:
+          GH_TOKEN: ${{ steps.cleanup-token.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CHECK_CONCLUSION: ${{ needs.warden.result == 'cancelled' && 'cancelled' || 'failure' }}
+        run: |
+          set -euo pipefail
+
+          completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          check_run_ids="$({
+            gh api "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" --paginate \
+              --jq '.check_runs[] | select(.status != "completed" and (.name == "warden" or (.name | startswith("warden: ")))) | .id'
+          })"
+
+          if [ -z "${check_run_ids}" ]; then
+            echo "No stale Warden checks found."
+            exit 0
+          fi
+
+          while IFS= read -r check_run_id; do
+            [ -n "${check_run_id}" ] || continue
+            echo "Completing stale Warden check ${check_run_id} as ${CHECK_CONCLUSION}."
+            gh api --method PATCH "repos/${GH_REPO}/check-runs/${check_run_id}" \
+              -f status=completed \
+              -f conclusion="${CHECK_CONCLUSION}" \
+              -f completed_at="${completed_at}" \
+              -f 'output[title]=Warden did not complete' \
+              -f 'output[summary]=Warden failed, timed out, or lost runner communication before completing this check. See the Warden workflow run for details.'
+          done <<< "${check_run_ids}"
