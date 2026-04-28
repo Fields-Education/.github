@@ -8,6 +8,15 @@ requestChanges = false
 maxFindings = 20
 
 [defaults.chunking]
+maxContextFiles = 25
+
+[defaults.chunking.coalesce]
+enabled = true
+maxGapLines = 250
+maxChunkSize = 8000
+
+[runner]
+concurrency = 16
 
 [[defaults.chunking.filePatterns]]
 pattern = "profile/**"

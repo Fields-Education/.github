@@ -48,6 +48,7 @@ jobs:
           WARDEN_SENTRY_DSN: ${{ secrets.WARDEN_SENTRY_DSN }}
           WARDEN_ANTHROPIC_API_KEY: ${{ secrets.WARDEN_API_KEY }}
         with:
-          anthropic-api-key: ${{ secrets.WARDEN_API_KEY }} # warden_antrhopic is the old key through opencode zen
+          anthropic-api-key: ${{ secrets.WARDEN_API_KEY }} # WARDEN_ANTHROPIC_API_KEY is the old key through opencode zen
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           request-changes: true
+          parallel: 16
