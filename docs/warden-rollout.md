@@ -7,18 +7,20 @@ This repository is the source of truth for the org-level Warden workflow.
 - Workflow file: `./.github/workflows/warden.yml`
 - Intended host repository: `Fields-Education/.github`
 - Intended ruleset target: organization repositories on their default branch
+- Default Warden action parallelism: `parallel: 16`
 
 The workflow follows the Warden org setup pattern:
 
 - canonical workflow lives in the org `.github` repository
 - organization ruleset requires that workflow for targeted repositories
 - repositories without `warden.toml` rely on Warden's native warn-and-skip behavior
+- repositories can override file-analysis parallelism with `[runner] concurrency = 16` in `warden.toml`
 
 No custom skip step is included on purpose.
 
 ## Preserved Behavior
 
-- `WARDEN_ANTHROPIC_API_KEY` stays externalized as a secret
+- `WARDEN_API_KEY` stays externalized as a secret
 - `WARDEN_MODEL` can come from either an org variable or org secret
 - `WARDEN_SENTRY_DSN` can come from either an org variable or org secret
 - `ANTHROPIC_BASE_URL` stays externalized as an Actions variable
@@ -31,7 +33,7 @@ An org-installed GitHub App for Warden already exists, so a new app does not nee
 
 Expected org-level configuration:
 
-- Secret: `WARDEN_ANTHROPIC_API_KEY` (required)
+- Secret: `WARDEN_API_KEY` (required)
 - Variable: `WARDEN_MODEL` (optional, recommended if you want a pinned org-wide model)
 - Secret: `WARDEN_SENTRY_DSN` (optional, recommended)
 - Variable: `ANTHROPIC_BASE_URL` (required for the custom gateway override)
