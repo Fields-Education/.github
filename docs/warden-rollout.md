@@ -5,6 +5,7 @@ This repository is the source of truth for the org-level Warden workflow.
 ## Shared Workflow
 
 - Workflow file: `./.github/workflows/warden.yml`
+- Future base Warden config: `./warden-base.toml`
 - Intended host repository: `Fields-Education/.github`
 - Intended ruleset target: organization repositories on their default branch
 - Default Warden action parallelism: `parallel: 16`
@@ -15,6 +16,7 @@ The workflow follows the Warden org setup pattern:
 - organization ruleset requires that workflow for targeted repositories
 - repositories without `warden.toml` rely on Warden's native warn-and-skip behavior
 - repositories can override file-analysis parallelism with `[runner] concurrency = 16` in `warden.toml`
+- the workflow passes `base-config-path: .warden-org/warden-base.toml` as a future Warden action input; current pinned releases warn and ignore unknown inputs
 
 No custom skip step is included on purpose.
 
@@ -23,9 +25,22 @@ No custom skip step is included on purpose.
 - `WARDEN_API_KEY` stays externalized as a secret
 - `WARDEN_MODEL` can come from either an org variable or org secret
 - `WARDEN_SENTRY_DSN` can come from either an org variable or org secret
-- `ANTHROPIC_BASE_URL` stays externalized as an Actions variable
+- `WARDEN_BASE_URL` stays externalized as an Actions variable and maps to `ANTHROPIC_BASE_URL`
 - if `WARDEN_APP_CLIENT_ID` and `WARDEN_PRIVATE_KEY` are present, the workflow uses a GitHub App token
 - if those app secrets are not present yet, the workflow falls back to `GITHUB_TOKEN` with the same write permissions the local workflow used
+
+## Fireworks Model Configuration
+
+Warden's repo-aware checks use the Anthropic-compatible Fireworks endpoint and read the model values from the workflow environment. Warden's auxiliary calls for deduplication, consolidation, and related structured tasks do not read those model environment variables in Warden v0.22.0. They fall back to Warden's built-in `claude-haiku-4-5` unless the repo config sets an auxiliary model.
+
+Each repository that runs Warden through Fireworks should include:
+
+```toml
+[defaults.auxiliary]
+model = "accounts/fireworks/models/kimi-k2p5"
+```
+
+The shared workflow also checks out `Fields-Education/.github` into `.warden-org` and passes `.warden-org/warden-base.toml` as `base-config-path`. That input is not available in the current pinned Warden action release, so GitHub emits an invalid-input warning and the action ignores it. Keep the repo-local `[defaults.auxiliary]` stanza until Warden releases that action input.
 
 An org-installed GitHub App for Warden already exists, so a new app does not need to be created or installed. The remaining GitHub App setup is to store that app's credentials as org Actions secrets.
 
@@ -36,14 +51,16 @@ Expected org-level configuration:
 - Secret: `WARDEN_API_KEY` (required)
 - Variable: `WARDEN_MODEL` (optional, recommended if you want a pinned org-wide model)
 - Secret: `WARDEN_SENTRY_DSN` (optional, recommended)
-- Variable: `ANTHROPIC_BASE_URL` (required for the custom gateway override)
+- Secret: `WARDEN_OTLP_ENDPOINT` (optional, recommended for Claude Code telemetry through Warden)
+- Secret: `WARDEN_OTLP_HEADER` (optional, recommended with `WARDEN_OTLP_ENDPOINT`)
+- Variable: `WARDEN_BASE_URL` (required for the custom gateway override)
 - Variable: `WARDEN_APP_CLIENT_ID` (recommended)
 - Secret: `WARDEN_PRIVATE_KEY` (recommended)
 
 Notes:
 
 - GitHub does not allow reading existing secret values back out, so moving repo-level secrets to org-level requires setting the org secrets with the same values manually.
-- `ANTHROPIC_BASE_URL` should be copied from the current repo-level variable into the org-level variable with the same name.
+- `WARDEN_BASE_URL` should be copied from the current repo-level custom gateway variable into the org-level variable with the same name.
 - `WARDEN_MODEL` is optional from Warden's perspective. Keeping it set as an org variable is a good way to pin model behavior org-wide and avoid unexpected default-model changes.
 - GitHub App client IDs are identifiers, not credentials. The private key is the sensitive part and must stay in `WARDEN_PRIVATE_KEY`.
 
