@@ -43,7 +43,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token || github.token }}
           ref: main
 
-      - uses: getsentry/warden@7f14604458ad99a7221ac4608dcd9e9ae843d05e # v0.22.0
+      - uses: getsentry/warden@ce748880a56a5b0d74d42324778908ee17bbaf18 # v0.24.0
         id: warden
         timeout-minutes: 60
         env:
@@ -75,7 +75,6 @@ jobs:
         with:
           anthropic-api-key: ${{ secrets.WARDEN_API_KEY }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
-          # Future Warden action input. Current pinned releases warn and ignore it.
           base-config-path: .warden-org/warden-base.toml
           request-changes: true
           parallel: 8
