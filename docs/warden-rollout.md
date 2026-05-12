@@ -5,7 +5,7 @@ This repository is the source of truth for the org-level Warden workflow.
 ## Shared Workflow
 
 - Workflow file: `./.github/workflows/warden.yml`
-- Future base Warden config: `./warden-base.toml`
+- Org base Warden config: `./warden-base.toml`
 - Intended host repository: `Fields-Education/.github`
 - Intended ruleset target: organization repositories on their default branch
 - Default Warden action parallelism: `parallel: 16`
@@ -16,7 +16,7 @@ The workflow follows the Warden org setup pattern:
 - organization ruleset requires that workflow for targeted repositories
 - repositories without `warden.toml` rely on Warden's native warn-and-skip behavior
 - repositories can override file-analysis parallelism with `[runner] concurrency = 16` in `warden.toml`
-- the workflow passes `base-config-path: .warden-org/warden-base.toml` as a future Warden action input; current pinned releases warn and ignore unknown inputs
+- the workflow passes `base-config-path: .warden-org/warden-base.toml` so the org base config is merged with repository overlays
 
 No custom skip step is included on purpose.
 
@@ -31,16 +31,14 @@ No custom skip step is included on purpose.
 
 ## Fireworks Model Configuration
 
-Warden's repo-aware checks use the Anthropic-compatible Fireworks endpoint and read the model values from the workflow environment. Warden's auxiliary calls for deduplication, consolidation, and related structured tasks do not read those model environment variables in Warden v0.22.0. They fall back to Warden's built-in `claude-haiku-4-5` unless the repo config sets an auxiliary model.
-
-Each repository that runs Warden through Fireworks should include:
+Warden's repo-aware checks use the Anthropic-compatible Fireworks endpoint and read the model values from the workflow environment. The shared org base config sets the auxiliary model used for deduplication, consolidation, and related structured tasks:
 
 ```toml
 [defaults.auxiliary]
 model = "accounts/fireworks/models/kimi-k2p5"
 ```
 
-The shared workflow also checks out `Fields-Education/.github` into `.warden-org` and passes `.warden-org/warden-base.toml` as `base-config-path`. That input is not available in the current pinned Warden action release, so GitHub emits an invalid-input warning and the action ignores it. Keep the repo-local `[defaults.auxiliary]` stanza until Warden releases that action input.
+Repositories can still set a repo-local `[defaults.auxiliary]` stanza when they need to override the org default or when they run Warden outside the shared workflow.
 
 An org-installed GitHub App for Warden already exists, so a new app does not need to be created or installed. The remaining GitHub App setup is to store that app's credentials as org Actions secrets.
 
