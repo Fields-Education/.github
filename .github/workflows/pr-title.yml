@@ -27,6 +27,59 @@ jobs:
             .conform-pr-title.yml
             .conform.yaml
             .conform.yml
+            mise.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Detect target mise config
+        id: target-mise
+        run: |
+          set -euo pipefail
+
+          if [ -f mise.toml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Found mise.toml in target repository"
+            exit 0
+          fi
+
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          echo "No mise.toml found in target repository; falling back to workflow source repository"
+
+      - name: Resolve workflow source
+        if: steps.target-mise.outputs.exists != 'true'
+        id: workflow-source
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+
+          node <<'JS'
+          const fs = require("node:fs");
+
+          const workflowRef = process.env.WORKFLOW_REF || "";
+          const marker = "/.github/workflows/";
+          const markerIndex = workflowRef.indexOf(marker);
+          const refIndex = workflowRef.lastIndexOf("@");
+
+          if (markerIndex === -1 || refIndex === -1 || refIndex < markerIndex) {
+            throw new Error(`Could not resolve workflow source from github.workflow_ref: ${workflowRef}`);
+          }
+
+          const repository = workflowRef.slice(0, markerIndex);
+          const ref = workflowRef.slice(refIndex + 1);
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `repository=${repository}\nref=${ref}\n`);
+          console.log(`Resolved workflow source as ${repository}@${ref}`);
+          JS
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: steps.target-mise.outputs.exists != 'true'
+        with:
+          repository: ${{ steps.workflow-source.outputs.repository }}
+          ref: ${{ steps.workflow-source.outputs.ref }}
+          path: .workflow-source
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout: mise.toml
           sparse-checkout-cone-mode: false
 
       - name: Prepare PR title Conform config
@@ -192,18 +245,80 @@ jobs:
           echo "Using shared default PR title Conform config because $source_file does not define title-safe commit rules. Add .conform-pr-title.yaml for repo-specific title rules, or update .conform.yaml/.yml to derive PR title rules from commit policy."
           exit 0
 
+      - name: Read conform version
+        if: steps.conform-config.outputs.exists == 'true'
+        id: conform-version
+        run: |
+          set -euo pipefail
+
+          node <<'JS'
+          const fs = require("node:fs");
+
+          function readConformVersion(path) {
+            const mise = fs.readFileSync(path, "utf8");
+            let inTools = false;
+
+            for (const rawLine of mise.split(/\r?\n/)) {
+              const section = rawLine.match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/);
+              if (section) {
+                inTools = section[1].trim() === "tools";
+                continue;
+              }
+
+              if (!inTools) {
+                continue;
+              }
+
+              const line = rawLine.replace(/\s+#.*$/, "").trim();
+              const match = line.match(/^(?:"conform"|conform)\s*=\s*"([^"]+)"\s*$/);
+              if (match) {
+                return match[1];
+              }
+            }
+
+            throw new Error(`Could not find conform = "..." in [tools] of ${path}`);
+          }
+
+          const candidates = [
+            { path: "mise.toml", source: "target repository" },
+            { path: ".workflow-source/mise.toml", source: "workflow source repository" },
+          ];
+
+          const candidate = candidates.find(({ path }) => fs.existsSync(path));
+          if (!candidate) {
+            throw new Error("Could not find mise.toml in target repository or workflow source repository");
+          }
+
+          const version = readConformVersion(candidate.path);
+          const tag = version.startsWith("v") ? version : `v${version}`;
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${tag}\n`);
+          console.log(`Using conform ${tag} from ${candidate.source} (${candidate.path})`);
+          JS
+
       - name: Install conform
         if: steps.conform-config.outputs.exists == 'true'
         env:
-          CONFORM_VERSION: v0.1.0-alpha.31
-          CONFORM_SHA256: 344dd5fad42c61bf739491b490d453943d06f9aaed5488a738c0bbd4588b6914
+          CONFORM_VERSION: ${{ steps.conform-version.outputs.version }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL -o "$HOME/.local/bin/conform" "https://github.com/siderolabs/conform/releases/download/${CONFORM_VERSION}/conform-linux-amd64"
-          echo "${CONFORM_SHA256}  $HOME/.local/bin/conform" | sha256sum -c -
-          chmod +x "$HOME/.local/bin/conform"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+          asset="conform-linux-amd64"
+          install_dir="$HOME/.local/bin"
+          download_dir="${RUNNER_TEMP}/conform"
+
+          mkdir -p "$install_dir" "$download_dir"
+
+          curl -fsSL -o "$download_dir/$asset" "https://github.com/siderolabs/conform/releases/download/${CONFORM_VERSION}/${asset}"
+          curl -fsSL -o "$download_dir/sha256sum.txt" "https://github.com/siderolabs/conform/releases/download/${CONFORM_VERSION}/sha256sum.txt"
+
+          (
+            cd "$download_dir"
+            grep -E "  ${asset}$" sha256sum.txt | sha256sum -c -
+          )
+
+          install -m 0755 "$download_dir/$asset" "$install_dir/conform"
+          echo "$install_dir" >> "$GITHUB_PATH"
 
       - name: Validate PR title
         if: steps.conform-config.outputs.exists == 'true'
