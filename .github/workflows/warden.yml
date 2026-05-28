@@ -76,6 +76,7 @@ jobs:
           anthropic-api-key: ${{ secrets.WARDEN_API_KEY }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           base-config-path: .warden-org/warden-base.toml
+          report-on: medium
           request-changes: true
           parallel: 8
 
