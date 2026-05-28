@@ -1,4 +1,7 @@
 version = 1
 
+[defaults]
+reportOn = "medium"
+
 [defaults.auxiliary]
 model = "accounts/fireworks/models/kimi-k2p5"
