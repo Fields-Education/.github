@@ -17,21 +17,23 @@ permissions:
 jobs:
   warden:
     if: >-
-      github.event.pull_request.draft == false &&
-      (
-        github.event.pull_request.user.type != 'Bot' ||
-        contains(fromJSON('["fields-grove[bot]","fields-education-triage-autofixer[bot]"]'), github.event.pull_request.user.login) ||
-        contains(github.event.pull_request.user.login, 'opencode')
-      )
+      github.event.pull_request.user.type != 'Bot' ||
+      contains(fromJSON('["fields-grove[bot]","fields-education-triage-autofixer[bot]"]'), github.event.pull_request.user.login) ||
+      contains(github.event.pull_request.user.login, 'opencode')
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 65
     steps:
+      - name: Skip draft PR
+        if: github.event.pull_request.draft == true
+        run: echo "Skipping Warden for draft pull request."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: github.event.pull_request.draft == false
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        if: ${{ vars.WARDEN_APP_CLIENT_ID != '' }}
+        if: ${{ github.event.pull_request.draft == false && vars.WARDEN_APP_CLIENT_ID != '' }}
         id: app-token
         with:
           client-id: ${{ vars.WARDEN_APP_CLIENT_ID }}
@@ -39,6 +41,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: github.event.pull_request.draft == false
         with:
           repository: Fields-Education/.github
           path: .warden-org
@@ -46,10 +49,12 @@ jobs:
           ref: main
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        if: github.event.pull_request.draft == false
         with:
           node-version: "24"
 
       - uses: Destreyf/warden@d23fa6ab1921e7e636aa5c7045bb04b56c3913e5 # Pi model selector fix
+        if: github.event.pull_request.draft == false
         id: warden
         timeout-minutes: 60
         env:
