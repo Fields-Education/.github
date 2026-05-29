@@ -3,3 +3,6 @@ version = 1
 [defaults]
 reportOn = "medium"
 runtime = "pi"
+
+[defaults.auxiliary]
+model = "fireworks/accounts/fireworks/models/kimi-k2p5"
