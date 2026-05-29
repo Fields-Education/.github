@@ -14,8 +14,9 @@ The workflow follows the Warden org setup pattern:
 
 - canonical workflow lives in the org `.github` repository
 - organization ruleset requires that workflow for targeted repositories
-- repositories without `warden.toml` rely on Warden's native warn-and-skip behavior
+- repositories without `warden.toml` load the org base config and complete with no matched triggers
 - repositories can override file-analysis parallelism with `[runner] concurrency = 16` in `warden.toml`
+- the target repository checkout uses the pull request head SHA so Warden reads the same code it annotates
 - the workflow passes `base-config-path: .warden-org/warden-base.toml` so the org base config is merged with repository overlays
 - the workflow installs Node 24 before running Warden because Warden's `v0.34.x` action bundle preloads the Pi runtime, whose dependencies require Node APIs not present in Node 20
 

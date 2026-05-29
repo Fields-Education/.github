@@ -6,6 +6,7 @@ reportOn = "medium"
 failCheck = true
 requestChanges = false
 maxFindings = 20
+runtime = "pi"
 
 [defaults.chunking]
 maxContextFiles = 25
