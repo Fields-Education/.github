@@ -20,7 +20,7 @@ jobs:
       github.event.pull_request.user.type != 'Bot' ||
       contains(fromJSON('["fields-grove[bot]","fields-education-triage-autofixer[bot]"]'), github.event.pull_request.user.login) ||
       contains(github.event.pull_request.user.login, 'opencode')
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 65
     steps:
       - name: Skip draft PR
@@ -83,7 +83,7 @@ jobs:
   cleanup-warden-checks:
     if: ${{ always() && needs.warden.result != 'success' && needs.warden.result != 'skipped' }}
     needs: warden
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
