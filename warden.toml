@@ -6,12 +6,10 @@ reportOn = "medium"
 failCheck = true
 requestChanges = false
 maxFindings = 20
+runtime = "pi"
 
 [defaults.chunking]
 maxContextFiles = 25
-
-[defaults.auxiliary]
-model = "accounts/fireworks/models/kimi-k2p5"
 
 [defaults.chunking.coalesce]
 enabled = true
