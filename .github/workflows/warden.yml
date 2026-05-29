@@ -74,7 +74,7 @@ jobs:
           base-config-path: .warden-org/warden-base.toml
           report-on: medium
           request-changes: true
-          parallel: 8
+          parallel: 4
 
   cleanup-warden-checks:
     if: ${{ always() && needs.warden.result != 'success' && needs.warden.result != 'skipped' }}
