@@ -49,7 +49,7 @@ jobs:
         with:
           node-version: "24"
 
-      - uses: Destreyf/warden@eb3ce14f233e89e4d7b05a23f283d96302cecc5e # Pi model selector fix
+      - uses: Destreyf/warden@d23fa6ab1921e7e636aa5c7045bb04b56c3913e5 # Pi model selector fix
         id: warden
         timeout-minutes: 60
         env:
