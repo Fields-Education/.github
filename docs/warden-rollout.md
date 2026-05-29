@@ -8,7 +8,7 @@ This repository is the source of truth for the org-level Warden workflow.
 - Org base Warden config: `./warden-base.toml`
 - Intended host repository: `Fields-Education/.github`
 - Intended ruleset target: organization repositories on their default branch
-- Default Warden action parallelism: `parallel: 16`
+- Default Warden action parallelism: `parallel: 8`
 
 The workflow follows the Warden org setup pattern:
 
@@ -17,28 +17,39 @@ The workflow follows the Warden org setup pattern:
 - repositories without `warden.toml` rely on Warden's native warn-and-skip behavior
 - repositories can override file-analysis parallelism with `[runner] concurrency = 16` in `warden.toml`
 - the workflow passes `base-config-path: .warden-org/warden-base.toml` so the org base config is merged with repository overlays
+- the workflow installs Node 24 before running Warden because Warden's `v0.34.x` action bundle preloads the Pi runtime, whose dependencies require Node APIs not present in Node 20
 
 No custom skip step is included on purpose.
 
 ## Preserved Behavior
 
 - `WARDEN_API_KEY` stays externalized as a secret
-- `WARDEN_MODEL` can come from either an org variable or org secret
 - `WARDEN_SENTRY_DSN` can come from either an org variable or org secret
-- `WARDEN_BASE_URL` stays externalized as an Actions variable and maps to `ANTHROPIC_BASE_URL`
+- `WARDEN_API_KEY` is exposed to Pi as `FIREWORKS_API_KEY`
 - if `WARDEN_APP_CLIENT_ID` and `WARDEN_PRIVATE_KEY` are present, the workflow uses a GitHub App token
 - if those app secrets are not present yet, the workflow falls back to `GITHUB_TOKEN` with the same write permissions the local workflow used
 
-## Fireworks Model Configuration
+## Pi Fireworks Configuration
 
-Warden's repo-aware checks use the Anthropic-compatible Fireworks endpoint and read the model values from the workflow environment. The shared org base config sets the auxiliary model used for deduplication, consolidation, and related structured tasks:
+Warden `0.34.0` defaults to the Pi runtime. The shared org base config pins that explicitly:
 
 ```toml
-[defaults.auxiliary]
-model = "accounts/fireworks/models/kimi-k2p5"
+[defaults]
+runtime = "pi"
 ```
 
-Repositories can still set a repo-local `[defaults.auxiliary]` stanza when they need to override the org default or when they run Warden outside the shared workflow.
+The workflow maps the existing `WARDEN_API_KEY` secret to Pi's Fireworks credentials:
+
+```yaml
+FIREWORKS_API_KEY: ${{ secrets.WARDEN_API_KEY }}
+WARDEN_FIREWORKS_API_KEY: ${{ secrets.WARDEN_API_KEY }}
+```
+
+Do not pass the Fireworks key through `anthropic-api-key`, `ANTHROPIC_API_KEY`, or `WARDEN_ANTHROPIC_API_KEY`. Those names make Pi treat the key as Anthropic credentials.
+
+Do not set `WARDEN_MODEL` or `[defaults.auxiliary].model` to `accounts/fireworks/models/...` with Warden `0.34.0`. Pi itself supports Fireworks model IDs like `accounts/fireworks/models/kimi-k2p6`, but Warden's `0.34.0` Pi selector validation only accepts one slash in configured model values. With only `FIREWORKS_API_KEY` present and no explicit model configured, Pi selects its Fireworks default model.
+
+Repositories can still set a repo-local `[defaults.auxiliary]` stanza with a Warden-valid Pi selector when they need to override the org default or when they run Warden outside the shared workflow.
 
 An org-installed GitHub App for Warden already exists, so a new app does not need to be created or installed. The remaining GitHub App setup is to store that app's credentials as org Actions secrets.
 
@@ -46,20 +57,20 @@ An org-installed GitHub App for Warden already exists, so a new app does not nee
 
 Expected org-level configuration:
 
-- Secret: `WARDEN_API_KEY` (required)
-- Variable: `WARDEN_MODEL` (optional, recommended if you want a pinned org-wide model)
+- Secret: `WARDEN_API_KEY` (required; Fireworks API key)
+- Variable: `WARDEN_MODEL` (do not set for the Pi Fireworks workflow on Warden `0.34.0`)
 - Secret: `WARDEN_SENTRY_DSN` (optional, recommended)
-- Secret: `WARDEN_OTLP_ENDPOINT` (optional, recommended for Claude Code telemetry through Warden)
+- Secret: `WARDEN_OTLP_ENDPOINT` (optional, recommended for Warden telemetry)
 - Secret: `WARDEN_OTLP_HEADER` (optional, recommended with `WARDEN_OTLP_ENDPOINT`)
-- Variable: `WARDEN_BASE_URL` (required for the custom gateway override)
+- Variable: `WARDEN_BASE_URL` (not used by the Pi Fireworks workflow)
 - Variable: `WARDEN_APP_CLIENT_ID` (recommended)
 - Secret: `WARDEN_PRIVATE_KEY` (recommended)
 
 Notes:
 
 - GitHub does not allow reading existing secret values back out, so moving repo-level secrets to org-level requires setting the org secrets with the same values manually.
-- `WARDEN_BASE_URL` should be copied from the current repo-level custom gateway variable into the org-level variable with the same name.
-- `WARDEN_MODEL` is optional from Warden's perspective. Keeping it set as an org variable is a good way to pin model behavior org-wide and avoid unexpected default-model changes.
+- `WARDEN_BASE_URL` was required for the old Anthropic-compatible Fireworks shim. Pi uses its built-in Fireworks provider instead.
+- `WARDEN_MODEL` must remain unset unless the value is a Warden-valid Pi selector with exactly one slash, such as `openai/gpt-5.5`. Fireworks model IDs currently include additional slashes, so they cannot be pinned through Warden `0.34.0` config.
 - GitHub App client IDs are identifiers, not credentials. The private key is the sensitive part and must stay in `WARDEN_PRIVATE_KEY`.
 
 ## Ruleset

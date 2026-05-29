@@ -43,24 +43,19 @@ jobs:
           token: ${{ steps.app-token.outputs.token || github.token }}
           ref: main
 
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+
       - uses: getsentry/warden@0aea651561cd820aceba6d1c7d624a1ad2b6688e # v0.34.0
         id: warden
         timeout-minutes: 60
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.WARDEN_API_KEY }}
-          ANTHROPIC_BASE_URL: ${{ vars.WARDEN_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ vars.WARDEN_MODEL }}
-          ANTHROPIC_SMALL_FAST_MODEL: ${{ vars.WARDEN_SMALL_FAST_MODEL }}
-          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.WARDEN_DEFAULT_SONNET_MODEL }}
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.WARDEN_DEFAULT_HAIKU_MODEL }}
-          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.WARDEN_DEFAULT_OPUS_MODEL }}
-          WARDEN_MODEL: ${{ vars.WARDEN_MODEL }}
+          FIREWORKS_API_KEY: ${{ secrets.WARDEN_API_KEY }}
+          WARDEN_FIREWORKS_API_KEY: ${{ secrets.WARDEN_API_KEY }}
           WARDEN_OTLP_ENDPOINT: ${{ secrets.WARDEN_OTLP_ENDPOINT }}
           WARDEN_OTLP_HEADER: ${{ secrets.WARDEN_OTLP_HEADER }}
           WARDEN_SENTRY_DSN: ${{ secrets.WARDEN_SENTRY_DSN }}
-          WARDEN_ANTHROPIC_API_KEY: ${{ secrets.WARDEN_API_KEY }}
-          CLAUDE_CODE_ENABLE_TELEMETRY: "1"
-          CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1"
           OTEL_METRICS_EXPORTER: otlp
           OTEL_LOGS_EXPORTER: otlp
           OTEL_TRACES_EXPORTER: otlp
@@ -73,7 +68,6 @@ jobs:
           OTEL_LOG_RAW_API_BODIES: "0"
           OTEL_RESOURCE_ATTRIBUTES: service.name=warden,service.namespace=github-actions,deployment.environment=ci,github.repository=${{ github.repository }},github.workflow=${{ github.workflow }}
         with:
-          anthropic-api-key: ${{ secrets.WARDEN_API_KEY }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           base-config-path: .warden-org/warden-base.toml
           report-on: medium
