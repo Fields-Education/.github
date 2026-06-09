@@ -66,7 +66,7 @@ jobs:
           node-version: "24"
 
       - name: Install agent skill dependencies
-        if: ${{ steps.pr-state.outputs.draft == 'false' && hashFiles('agents.toml') != '' }}
+        if: ${{ steps.pr-state.outputs.draft == 'false' && hashFiles('agents.toml') != '' && github.event.pull_request.head.repo.full_name == github.repository }}
         run: npx --yes @sentry/dotagents install
 
       - uses: Destreyf/warden@d23fa6ab1921e7e636aa5c7045bb04b56c3913e5 # Pi model selector fix
