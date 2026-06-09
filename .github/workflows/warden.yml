@@ -65,6 +65,10 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Install agent skill dependencies
+        if: ${{ steps.pr-state.outputs.draft == 'false' && hashFiles('agents.toml') != '' }}
+        run: npx --yes @sentry/dotagents install
+
       - uses: Destreyf/warden@d23fa6ab1921e7e636aa5c7045bb04b56c3913e5 # Pi model selector fix
         if: steps.pr-state.outputs.draft == 'false'
         id: warden
