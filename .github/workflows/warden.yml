@@ -2,7 +2,7 @@ name: Warden
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -21,7 +21,7 @@ jobs:
       contains(fromJSON('["fields-grove[bot]","fields-education-triage-autofixer[bot]"]'), github.event.pull_request.user.login) ||
       contains(github.event.pull_request.user.login, 'opencode')
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 70
+    timeout-minutes: 120
     steps:
       - name: Detect current PR state
         id: pr-state
@@ -32,34 +32,46 @@ jobs:
         run: |
           set -euo pipefail
 
-          draft="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.draft')"
-
-          # Last authorized "/warden <verb>" or "/reviewer <verb>" command wins.
-          # The comments API returns ascending created_at and --paginate emits
-          # pages in order, so the final matching line is the latest command.
-          # Comment bodies are parsed entirely inside jq; only derived literals
-          # reach the shell and GITHUB_OUTPUT.
-          last_verb="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
-            --paginate \
-            --jq '
-              .[]
-              | select(
-                  .author_association == "OWNER"
-                  or .author_association == "MEMBER"
-                  or .author_association == "COLLABORATOR"
-                )
-              | .body // ""
-              | gsub("\r"; "")
-              | split("\n")[]
-              | gsub("^\\s+|\\s+$"; "")
-              | ascii_downcase
-              | select(test("^/(warden|reviewer)\\s+(skip|run|allow|resume)$"))
-              | sub("^/(warden|reviewer)\\s+"; "")
-            ' | tail -n 1)"
+          # One call yields both the live draft state and whether a skip label
+          # (warden:off or reviewer:off, case-insensitive) is present.
+          pr_state="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '"\(.draft) \([.labels[]?.name | ascii_downcase] | map(select(. == "warden:off" or . == "reviewer:off")) | length > 0)"')"
+          read -r draft label_off <<< "${pr_state}"
 
           skip=false
-          if [ "${last_verb}" = "skip" ]; then
+          skip_source=""
+          last_verb=""
+          if [ "${label_off}" = "true" ]; then
             skip=true
+            skip_source="label"
+          else
+            # Last authorized "/warden <verb>" or "/reviewer <verb>" command
+            # wins. The comments API returns ascending created_at and
+            # --paginate emits pages in order, so the final matching line is
+            # the latest command. Comment bodies are parsed entirely inside
+            # jq; only derived literals reach the shell and GITHUB_OUTPUT.
+            last_verb="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              --paginate \
+              --jq '
+                .[]
+                | select(
+                    .author_association == "OWNER"
+                    or .author_association == "MEMBER"
+                    or .author_association == "COLLABORATOR"
+                  )
+                | .body // ""
+                | gsub("\r"; "")
+                | split("\n")[]
+                | gsub("^\\s+|\\s+$"; "")
+                | ascii_downcase
+                | select(test("^/(warden|reviewer)\\s+(skip|run|allow|resume)$"))
+                | sub("^/(warden|reviewer)\\s+"; "")
+              ' | tail -n 1)"
+
+            if [ "${last_verb}" = "skip" ]; then
+              skip=true
+              skip_source="comment"
+            fi
           fi
 
           proceed=true
@@ -69,7 +81,7 @@ jobs:
             reason="draft"
           elif [ "${skip}" = "true" ]; then
             proceed=false
-            reason="comment-skip"
+            reason="${skip_source}-skip"
           fi
 
           {
@@ -80,6 +92,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           echo "Current PR draft state: ${draft}"
+          echo "Skip label (warden:off / reviewer:off) present: ${label_off}"
           echo "Last authorized reviewer command verb: ${last_verb:-none}"
           echo "Proceed with Warden: ${proceed}"
 
@@ -91,6 +104,10 @@ jobs:
           case "${SKIP_REASON}" in
             draft)
               echo "Skipping Warden for draft pull request."
+              ;;
+            label-skip)
+              echo "Skipping Warden: a 'warden:off' or 'reviewer:off' label disables Warden for this pull request."
+              echo "Remove the label and re-run this workflow (or push a new commit) to re-enable."
               ;;
             comment-skip)
               echo "Skipping Warden: an authorized '/warden skip' (or '/reviewer skip') comment disables Warden for this pull request."
@@ -126,7 +143,7 @@ jobs:
         uses: getsentry/warden@c85791e0571b0d03646e6d2cbacc772831ff9ff6 # v0.38.1
         if: steps.pr-state.outputs.proceed == 'true'
         id: warden-analyze
-        timeout-minutes: 55
+        timeout-minutes: 105
         env:
           WARDEN_FIREWORKS_API_KEY: ${{ secrets.WARDEN_API_KEY }}
           WARDEN_OTLP_ENDPOINT: ${{ secrets.WARDEN_OTLP_ENDPOINT }}

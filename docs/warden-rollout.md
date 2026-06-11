@@ -40,16 +40,22 @@ cancellations was removed for that reason.
 
 ## Skipping Warden
 
-Two gates run before analysis, both evaluated against live PR state when the
+Three gates run before analysis, all evaluated against live PR state when the
 job starts:
 
 - Draft pull requests are skipped automatically.
+- A `warden:off` or `reviewer:off` label on the pull request disables Warden
+  (case-insensitive). The label takes precedence over comment commands — while
+  it is present, `/warden run` comments are not consulted; remove the label to
+  re-enable. Applying labels requires triage permission or higher.
 - An authorized comment containing the line `/warden skip` (or
   `/reviewer skip`) disables Warden for the pull request. `/warden run`,
   `/warden allow`, `/warden resume`, and the `/reviewer` equivalents re-enable
   it. The last command wins, in comment creation order, regardless of prefix.
-  The `/reviewer` prefix is shared with the org's opencode-based review system
-  so one comment can address both reviewers.
+
+The `reviewer:off` label and `/reviewer` prefix are shared with the org's
+opencode-based review system so one label or comment can address both
+reviewers.
 
 Command rules:
 
@@ -63,11 +69,18 @@ A skipped run still completes successfully, so the required-workflow ruleset is
 satisfied — `/warden skip` makes the check green without analysis.
 
 Caveat: required workflows installed by org rulesets only trigger on default
-`pull_request` activity (opened, synchronize, reopened); `issue_comment` events
-never trigger them in target repositories. After commenting a skip or run
-command, re-run the Warden check from the Checks UI (or push a new commit) for
-the command to take effect. If an analysis is already running on a PR that is
-too large to finish, cancel the run first, then re-run it after commenting.
+`pull_request` activity (opened, synchronize, reopened); `issue_comment`,
+`labeled`, and `unlabeled` events never trigger them in target repositories.
+After commenting a command or changing a skip label, re-run the Warden check
+from the Checks UI (or push a new commit) for it to take effect. If an
+analysis is already running on a PR that is too large to finish, cancel the
+run first, then re-run it after commenting or labeling.
+
+In repositories that consume this workflow directly through their own workflow
+file (and in this repository itself), the `labeled` and `unlabeled` trigger
+types make label changes take effect immediately: applying `warden:off` starts
+a new run that passes right away, and the concurrency group cancels any
+analysis already in flight.
 
 ## Preserved Behavior
 
