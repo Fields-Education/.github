@@ -1,0 +1,204 @@
+name: Review Commands
+
+# Maps authorized "/warden|/reviewer|/opencode skip|run|allow|resume" PR
+# comments to the warden:off / reviewer:off / opencode:off labels, then
+# cancels and re-runs the required Warden check so the command takes effect
+# without a manual re-run. Runs natively on comments in this repository and
+# is reusable from other repositories via workflow_call.
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_call:
+    inputs:
+      warden-workflow-name:
+        description: Name of the required review workflow whose runs are cancelled and re-run after a relevant label change
+        type: string
+        required: false
+        default: Warden
+    secrets:
+      WARDEN_PRIVATE_KEY:
+        description: Private key for the Warden GitHub App; needed so label events retrigger workflows
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: write
+
+jobs:
+  commands:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.user.type != 'Bot' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+      (contains(github.event.comment.body, '/warden') || contains(github.event.comment.body, '/reviewer') || contains(github.event.comment.body, '/opencode'))
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - name: Parse review commands
+        id: cmd
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+
+          # The comment body only ever appears in this env var and is parsed
+          # line by line against fixed literals; only derived label names and
+          # booleans reach GITHUB_OUTPUT. Last command per label wins within
+          # the comment.
+          declare -A action=()
+          while IFS= read -r raw; do
+            line="$(printf '%s' "${raw}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
+            case "${line}" in
+              "/warden skip") action["warden:off"]=add ;;
+              "/warden run"|"/warden allow"|"/warden resume") action["warden:off"]=remove ;;
+              "/reviewer skip") action["reviewer:off"]=add ;;
+              "/reviewer run"|"/reviewer allow"|"/reviewer resume") action["reviewer:off"]=remove ;;
+              "/opencode skip") action["opencode:off"]=add ;;
+              "/opencode run"|"/opencode allow"|"/opencode resume") action["opencode:off"]=remove ;;
+            esac
+          done <<< "${COMMENT_BODY}"
+
+          add_labels=""
+          remove_labels=""
+          warden_affected=false
+          for label in "${!action[@]}"; do
+            if [ "${action[${label}]}" = "add" ]; then
+              add_labels="${add_labels}${add_labels:+ }${label}"
+            else
+              remove_labels="${remove_labels}${remove_labels:+ }${label}"
+            fi
+            if [ "${label}" = "warden:off" ] || [ "${label}" = "reviewer:off" ]; then
+              warden_affected=true
+            fi
+          done
+
+          any=false
+          if [ -n "${add_labels}${remove_labels}" ]; then
+            any=true
+          fi
+
+          {
+            echo "any=${any}"
+            echo "add-labels=${add_labels}"
+            echo "remove-labels=${remove_labels}"
+            echo "warden-affected=${warden_affected}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Commands parsed. add: [${add_labels}] remove: [${remove_labels}]"
+
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: ${{ steps.cmd.outputs.any == 'true' && vars.WARDEN_APP_CLIENT_ID != '' }}
+        id: app-token
+        with:
+          client-id: ${{ vars.WARDEN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.WARDEN_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Apply label changes
+        if: steps.cmd.outputs.any == 'true'
+        id: apply
+        env:
+          # Label writes use the app token when available: events created by
+          # GITHUB_TOKEN do not trigger workflows, so labels added with the
+          # fallback token will not retrigger Warden in repositories that
+          # consume warden.yml directly.
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          HAS_APP_TOKEN: ${{ steps.app-token.outputs.token != '' }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          ADD_LABELS: ${{ steps.cmd.outputs.add-labels }}
+          REMOVE_LABELS: ${{ steps.cmd.outputs.remove-labels }}
+        run: |
+          set -euo pipefail
+
+          echo "op-started-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+          if [ "${HAS_APP_TOKEN}" != "true" ]; then
+            echo "::warning::No Warden app token configured; label events created with GITHUB_TOKEN will not retrigger workflows."
+          fi
+
+          read -r -a labels_to_add <<< "${ADD_LABELS}"
+          read -r -a labels_to_remove <<< "${REMOVE_LABELS}"
+
+          for label in "${labels_to_add[@]}"; do
+            case "${label}" in
+              warden:off) desc="Automatic warden reviews are disabled/bypassed" ;;
+              reviewer:off) desc="Automatic reviews (warden and opencode) are disabled/bypassed" ;;
+              opencode:off) desc="Automatic opencode reviews are disabled/bypassed" ;;
+              *) desc="Review control label" ;;
+            esac
+            # Ensure the label exists; tolerate it already existing so repo
+            # customizations of color or description are preserved.
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/labels" \
+              -f "name=${label}" -f "color=d93f0b" -f "description=${desc}" >/dev/null 2>&1 || true
+            echo "Adding label ${label}."
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" \
+              -f "labels[]=${label}" >/dev/null
+          done
+
+          for label in "${labels_to_remove[@]}"; do
+            echo "Removing label ${label}."
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${label}" >/dev/null 2>&1 \
+              || echo "Label ${label} was not present."
+          done
+
+      - name: Acknowledge command comment
+        if: steps.cmd.outputs.any == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions" \
+            -f content=eyes >/dev/null || true
+
+      - name: Sync required Warden check
+        if: steps.cmd.outputs.warden-affected == 'true'
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          WORKFLOW_NAME: ${{ inputs.warden-workflow-name || 'Warden' }}
+          OP_STARTED_AT: ${{ steps.apply.outputs.op-started-at }}
+        run: |
+          set -euo pipefail
+
+          head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+
+          run_info="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head_sha}&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == env.WORKFLOW_NAME)] | sort_by(.created_at) | last // empty | "\(.id) \(.status) \(.created_at)"')"
+          if [ -z "${run_info}" ]; then
+            echo "No ${WORKFLOW_NAME} runs found for ${head_sha}; nothing to sync."
+            exit 0
+          fi
+          read -r run_id run_status run_created <<< "${run_info}"
+
+          # ISO 8601 UTC timestamps compare correctly as strings. A run
+          # created after the label change is the labeled/unlabeled-triggered
+          # run in repositories that consume warden.yml directly; it already
+          # reflects the new state.
+          if [[ ! "${run_created}" < "${OP_STARTED_AT}" ]]; then
+            echo "A new ${WORKFLOW_NAME} run was already triggered by the label change; nothing to do."
+            exit 0
+          fi
+
+          if [ "${run_status}" != "completed" ]; then
+            echo "Cancelling in-flight ${WORKFLOW_NAME} run ${run_id}."
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null || true
+            for _ in $(seq 1 18); do
+              sleep 5
+              run_status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+              if [ "${run_status}" = "completed" ]; then
+                break
+              fi
+            done
+            if [ "${run_status}" != "completed" ]; then
+              echo "::warning::Run ${run_id} did not finish cancelling; re-run the ${WORKFLOW_NAME} check manually from the Checks UI."
+              exit 0
+            fi
+          fi
+
+          echo "Re-running ${WORKFLOW_NAME} run ${run_id} so its gate re-evaluates against the new state."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/rerun" >/dev/null \
+            || echo "::warning::Could not re-run run ${run_id}; re-run the ${WORKFLOW_NAME} check manually from the Checks UI."

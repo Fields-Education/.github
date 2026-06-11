@@ -82,6 +82,56 @@ types make label changes take effect immediately: applying `warden:off` starts
 a new run that passes right away, and the concurrency group cancels any
 analysis already in flight.
 
+## Comment Command Automation
+
+`./.github/workflows/review-commands.yml` removes the manual re-run step. It
+listens for new pull request comments and, for authorized commands
+(`/warden`, `/reviewer`, or `/opencode` followed by `skip`, `run`, `allow`, or
+`resume`):
+
+1. adds or removes the matching label (`warden:off`, `reviewer:off`,
+   `opencode:off`), creating it first if the repository does not have it
+2. reacts to the comment with an eyes emoji as acknowledgement
+3. when `warden:off` or `reviewer:off` changed, finds the latest Warden run
+   for the PR head SHA, cancels it if it is still in flight, and re-runs it so
+   the gate re-evaluates — this is what makes commands take effect immediately
+   in ruleset-enforced repositories, where label events cannot start new runs
+
+Label writes use the Warden GitHub App token when `WARDEN_APP_CLIENT_ID` and
+`WARDEN_PRIVATE_KEY` are configured. That matters because events created with
+`GITHUB_TOKEN` never trigger workflows, so app-less label changes would not
+retrigger Warden in repositories that consume `warden.yml` directly. The
+cancel and re-run calls use `GITHUB_TOKEN` with `actions: write` (explicit
+re-runs are not subject to that suppression).
+
+The workflow runs natively in this repository. Org rulesets cannot inject
+`issue_comment` workflows, so every other repository needs a small caller
+stub:
+
+```yaml
+name: Review Commands
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: write
+
+jobs:
+  commands:
+    if: github.event.issue.pull_request
+    uses: Fields-Education/.github/.github/workflows/review-commands.yml@main
+    secrets: inherit
+```
+
+Repositories without the stub keep the fallback behavior: commands and labels
+are still honored by the Warden gate, but take effect on the next push or a
+manual re-run from the Checks UI.
+
 ## Preserved Behavior
 
 - `WARDEN_API_KEY` stays externalized as a secret
