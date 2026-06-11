@@ -8,7 +8,7 @@ This repository is the source of truth for the org-level Warden workflow.
 - Org base Warden config: `./warden-base.toml`
 - Intended host repository: `Fields-Education/.github`
 - Intended ruleset target: organization repositories on their default branch
-- Default Warden action parallelism: `parallel: 8`
+- Default Warden action parallelism: `parallel: 4`
 
 The workflow follows the Warden org setup pattern:
 
@@ -20,7 +20,54 @@ The workflow follows the Warden org setup pattern:
 - the workflow passes `base-config-path: .warden-org/warden-base.toml` so the org base config is merged with repository overlays
 - the workflow installs Node 24 before running Warden because Warden's `v0.34.x` action bundle preloads the Pi runtime, whose dependencies require Node APIs not present in Node 20
 
-No custom skip step is included on purpose.
+## Split Analyze and Report
+
+Since Warden `0.38.x` the workflow runs the action twice in the same job:
+
+- `mode: analyze` runs the skills and writes a structured findings file. It does
+  not create checks, post comments, or resolve stale comments.
+- the GitHub App token is minted after analysis completes, so the 1-hour
+  installation token is always fresh for the reporting phase (the old layout
+  minted it before a potentially 60-minute analysis)
+- `mode: report` re-reads the merged config from the checkout and receives the
+  reporting inputs (`base-config-path`, `report-on`, `request-changes`). It
+  creates completed check runs and posts or resolves review comments.
+
+Because analyze mode creates no check runs and report mode only creates
+completed ones, there is no `in_progress` window for Warden checks. The old
+`cleanup-warden-checks` job that completed stale checks after failures and
+cancellations was removed for that reason.
+
+## Skipping Warden
+
+Two gates run before analysis, both evaluated against live PR state when the
+job starts:
+
+- Draft pull requests are skipped automatically.
+- An authorized comment containing the line `/warden skip` (or
+  `/reviewer skip`) disables Warden for the pull request. `/warden run`,
+  `/warden allow`, and the `/reviewer` equivalents re-enable it. The last
+  command wins, in comment creation order, regardless of prefix. The
+  `/reviewer` prefix is shared with the org's opencode-based review system so
+  one comment can address both reviewers.
+
+Command rules:
+
+- only comments from authors with `OWNER`, `MEMBER`, or `COLLABORATOR`
+  association count
+- matching is case-insensitive and the command must be on its own line
+- only pull request conversation comments are scanned, not review-thread
+  comments or review bodies
+
+A skipped run still completes successfully, so the required-workflow ruleset is
+satisfied — `/warden skip` makes the check green without analysis.
+
+Caveat: required workflows installed by org rulesets only trigger on default
+`pull_request` activity (opened, synchronize, reopened); `issue_comment` events
+never trigger them in target repositories. After commenting a skip or run
+command, re-run the Warden check from the Checks UI (or push a new commit) for
+the command to take effect. If an analysis is already running on a PR that is
+too large to finish, cancel the run first, then re-run it after commenting.
 
 ## Preserved Behavior
 
