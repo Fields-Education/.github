@@ -112,27 +112,8 @@ re-runs are not subject to that suppression).
 
 The workflow runs natively in this repository. Org rulesets cannot inject
 `issue_comment` workflows, so every other repository needs a small caller
-stub:
-
-```yaml
-name: Review Commands
-
-on:
-  issue_comment:
-    types: [created]
-
-permissions:
-  contents: read
-  issues: write
-  pull-requests: read
-  actions: write
-
-jobs:
-  commands:
-    if: github.event.issue.pull_request
-    uses: Fields-Education/.github/.github/workflows/review-commands.yml@main
-    secrets: inherit
-```
+stub — see `./review-commands.md` for the stub, inputs, and verification
+steps.
 
 Repositories without the stub keep the fallback behavior: commands and labels
 are still honored by the Warden gate, but take effect on the next push or a
