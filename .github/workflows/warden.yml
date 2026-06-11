@@ -122,6 +122,10 @@ jobs:
         if: steps.pr-state.outputs.proceed == 'true'
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # Incremental mode compares against the previous run's head SHA via
+          # local git history; the baseline commit must be present in the
+          # checkout, so fetch the full history rather than a shallow clone.
+          fetch-depth: 0
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: steps.pr-state.outputs.proceed == 'true'
@@ -140,7 +144,7 @@ jobs:
         run: npx --yes @sentry/dotagents install
 
       - name: Analyze
-        uses: getsentry/warden@c85791e0571b0d03646e6d2cbacc772831ff9ff6 # v0.38.1
+        uses: Destreyf/warden@4469827d9ce9c639c3123214027b05c24e3e8664 # incremental-action-dist
         if: steps.pr-state.outputs.proceed == 'true'
         id: warden-analyze
         timeout-minutes: 105
@@ -165,6 +169,10 @@ jobs:
           github-token: ${{ github.token }}
           base-config-path: .warden-org/warden-base.toml
           parallel: 4
+          # Initial run reviews everything; subsequent runs review only changes
+          # since the last completed incremental run for this PR. Must match the
+          # Report step's incremental setting or the report step fails.
+          incremental: true
 
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         if: ${{ steps.pr-state.outputs.proceed == 'true' && vars.WARDEN_APP_CLIENT_ID != '' }}
@@ -175,7 +183,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Report
-        uses: getsentry/warden@c85791e0571b0d03646e6d2cbacc772831ff9ff6 # v0.38.1
+        uses: Destreyf/warden@4469827d9ce9c639c3123214027b05c24e3e8664 # incremental-action-dist
         if: steps.pr-state.outputs.proceed == 'true'
         id: warden-report
         timeout-minutes: 10
@@ -201,3 +209,6 @@ jobs:
           base-config-path: .warden-org/warden-base.toml
           report-on: medium
           request-changes: true
+          # Must match the Analyze step: the report step validates that the
+          # findings file's incremental scope matches its own incremental input.
+          incremental: true
