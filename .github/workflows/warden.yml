@@ -2,7 +2,7 @@ name: Warden
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -21,58 +21,129 @@ jobs:
       contains(fromJSON('["fields-grove[bot]","fields-education-triage-autofixer[bot]"]'), github.event.pull_request.user.login) ||
       contains(github.event.pull_request.user.login, 'opencode')
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 65
+    timeout-minutes: 120
     steps:
       - name: Detect current PR state
         id: pr-state
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
 
-          draft="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.draft')"
-          echo "draft=${draft}" >> "$GITHUB_OUTPUT"
-          echo "Current PR draft state: ${draft}"
+          # One call yields both the live draft state and whether a skip label
+          # (warden:off or reviewer:off, case-insensitive) is present.
+          pr_state="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '"\(.draft) \([.labels[]?.name | ascii_downcase] | map(select(. == "warden:off" or . == "reviewer:off")) | length > 0)"')"
+          read -r draft label_off <<< "${pr_state}"
 
-      - name: Skip draft PR
-        if: steps.pr-state.outputs.draft == 'true'
-        run: echo "Skipping Warden for draft pull request."
+          skip=false
+          skip_source=""
+          last_verb=""
+          if [ "${label_off}" = "true" ]; then
+            skip=true
+            skip_source="label"
+          else
+            # Last authorized "/warden <verb>" or "/reviewer <verb>" command
+            # wins. The comments API returns ascending created_at and
+            # --paginate emits pages in order, so the final matching line is
+            # the latest command. Comment bodies are parsed entirely inside
+            # jq; only derived literals reach the shell and GITHUB_OUTPUT.
+            last_verb="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              --paginate \
+              --jq '
+                .[]
+                | select(
+                    .author_association == "OWNER"
+                    or .author_association == "MEMBER"
+                    or .author_association == "COLLABORATOR"
+                  )
+                | .body // ""
+                | gsub("\r"; "")
+                | split("\n")[]
+                | gsub("^\\s+|\\s+$"; "")
+                | ascii_downcase
+                | select(test("^/(warden|reviewer)\\s+(skip|run|allow|resume)$"))
+                | sub("^/(warden|reviewer)\\s+"; "")
+              ' | tail -n 1)"
+
+            if [ "${last_verb}" = "skip" ]; then
+              skip=true
+              skip_source="comment"
+            fi
+          fi
+
+          proceed=true
+          reason=""
+          if [ "${draft}" = "true" ]; then
+            proceed=false
+            reason="draft"
+          elif [ "${skip}" = "true" ]; then
+            proceed=false
+            reason="${skip_source}-skip"
+          fi
+
+          {
+            echo "draft=${draft}"
+            echo "skip=${skip}"
+            echo "proceed=${proceed}"
+            echo "reason=${reason}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Current PR draft state: ${draft}"
+          echo "Skip label (warden:off / reviewer:off) present: ${label_off}"
+          echo "Last authorized reviewer command verb: ${last_verb:-none}"
+          echo "Proceed with Warden: ${proceed}"
+
+      - name: Skip Warden
+        if: steps.pr-state.outputs.proceed != 'true'
+        env:
+          SKIP_REASON: ${{ steps.pr-state.outputs.reason }}
+        run: |
+          case "${SKIP_REASON}" in
+            draft)
+              echo "Skipping Warden for draft pull request."
+              ;;
+            label-skip)
+              echo "Skipping Warden: a 'warden:off' or 'reviewer:off' label disables Warden for this pull request."
+              echo "Remove the label and re-run this workflow (or push a new commit) to re-enable."
+              ;;
+            comment-skip)
+              echo "Skipping Warden: an authorized '/warden skip' (or '/reviewer skip') comment disables Warden for this pull request."
+              echo "Comment '/warden run' and re-run this workflow (or push a new commit) to re-enable."
+              ;;
+            *)
+              echo "Skipping Warden."
+              ;;
+          esac
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        if: steps.pr-state.outputs.draft == 'false'
+        if: steps.pr-state.outputs.proceed == 'true'
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        if: ${{ steps.pr-state.outputs.draft == 'false' && vars.WARDEN_APP_CLIENT_ID != '' }}
-        id: app-token
-        with:
-          client-id: ${{ vars.WARDEN_APP_CLIENT_ID }}
-          private-key: ${{ secrets.WARDEN_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        if: steps.pr-state.outputs.draft == 'false'
+        if: steps.pr-state.outputs.proceed == 'true'
         with:
           repository: Fields-Education/.github
           path: .warden-org
-          token: ${{ steps.app-token.outputs.token || github.token }}
           ref: main
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        if: steps.pr-state.outputs.draft == 'false'
+        if: steps.pr-state.outputs.proceed == 'true'
         with:
           node-version: "24"
 
       - name: Install agent skill dependencies
-        if: ${{ steps.pr-state.outputs.draft == 'false' && hashFiles('agents.toml') != '' && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ steps.pr-state.outputs.proceed == 'true' && hashFiles('agents.toml') != '' && github.event.pull_request.head.repo.full_name == github.repository }}
         run: npx --yes @sentry/dotagents install
 
-      - uses: getsentry/warden@41584860e861d9c597f80347310e8e14d30e260f # v0.37.0
-        if: steps.pr-state.outputs.draft == 'false'
-        id: warden
-        timeout-minutes: 60
+      - name: Analyze
+        uses: getsentry/warden@c85791e0571b0d03646e6d2cbacc772831ff9ff6 # v0.38.1
+        if: steps.pr-state.outputs.proceed == 'true'
+        id: warden-analyze
+        timeout-minutes: 105
         env:
           WARDEN_FIREWORKS_API_KEY: ${{ secrets.WARDEN_API_KEY }}
           WARDEN_OTLP_ENDPOINT: ${{ secrets.WARDEN_OTLP_ENDPOINT }}
@@ -90,53 +161,43 @@ jobs:
           OTEL_LOG_RAW_API_BODIES: "0"
           OTEL_RESOURCE_ATTRIBUTES: service.name=warden,service.namespace=github-actions,deployment.environment=ci,github.repository=${{ github.repository }},github.workflow=${{ github.workflow }}
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          mode: analyze
+          github-token: ${{ github.token }}
           base-config-path: .warden-org/warden-base.toml
-          report-on: medium
-          request-changes: true
           parallel: 4
 
-  cleanup-warden-checks:
-    if: ${{ always() && needs.warden.result != 'success' && needs.warden.result != 'skipped' }}
-    needs: warden
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 5
-    steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        if: ${{ vars.WARDEN_APP_CLIENT_ID != '' }}
-        id: cleanup-token
+        if: ${{ steps.pr-state.outputs.proceed == 'true' && vars.WARDEN_APP_CLIENT_ID != '' }}
+        id: app-token
         with:
           client-id: ${{ vars.WARDEN_APP_CLIENT_ID }}
           private-key: ${{ secrets.WARDEN_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - name: Complete stale Warden checks
+      - name: Report
+        uses: getsentry/warden@c85791e0571b0d03646e6d2cbacc772831ff9ff6 # v0.38.1
+        if: steps.pr-state.outputs.proceed == 'true'
+        id: warden-report
+        timeout-minutes: 10
         env:
-          GH_TOKEN: ${{ steps.cleanup-token.outputs.token || github.token }}
-          GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          CHECK_CONCLUSION: ${{ needs.warden.result == 'cancelled' && 'cancelled' || 'failure' }}
-        run: |
-          set -euo pipefail
-
-          completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          check_run_ids="$({
-            gh api "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" --paginate \
-              --jq '.check_runs[] | select(.status != "completed" and (.name == "warden" or (.name | startswith("warden: ")))) | .id'
-          })"
-
-          if [ -z "${check_run_ids}" ]; then
-            echo "No stale Warden checks found."
-            exit 0
-          fi
-
-          while IFS= read -r check_run_id; do
-            [ -n "${check_run_id}" ] || continue
-            echo "Completing stale Warden check ${check_run_id} as ${CHECK_CONCLUSION}."
-            gh api --method PATCH "repos/${GH_REPO}/check-runs/${check_run_id}" \
-              -f status=completed \
-              -f conclusion="${CHECK_CONCLUSION}" \
-              -f completed_at="${completed_at}" \
-              -f 'output[title]=Warden did not complete' \
-              -f 'output[summary]=Warden failed, timed out, or lost runner communication before completing this check. See the Warden workflow run for details.'
-          done <<< "${check_run_ids}"
+          WARDEN_OTLP_ENDPOINT: ${{ secrets.WARDEN_OTLP_ENDPOINT }}
+          WARDEN_OTLP_HEADER: ${{ secrets.WARDEN_OTLP_HEADER }}
+          WARDEN_SENTRY_DSN: ${{ secrets.WARDEN_SENTRY_DSN }}
+          OTEL_METRICS_EXPORTER: otlp
+          OTEL_LOGS_EXPORTER: otlp
+          OTEL_TRACES_EXPORTER: otlp
+          OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.WARDEN_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.WARDEN_OTLP_HEADER }}
+          OTEL_LOG_TOOL_DETAILS: "1"
+          OTEL_LOG_USER_PROMPTS: "0"
+          OTEL_LOG_TOOL_CONTENT: "0"
+          OTEL_LOG_RAW_API_BODIES: "0"
+          OTEL_RESOURCE_ATTRIBUTES: service.name=warden,service.namespace=github-actions,deployment.environment=ci,github.repository=${{ github.repository }},github.workflow=${{ github.workflow }}
+        with:
+          mode: report
+          findings-file: ${{ steps.warden-analyze.outputs.findings-file }}
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          base-config-path: .warden-org/warden-base.toml
+          report-on: medium
+          request-changes: true

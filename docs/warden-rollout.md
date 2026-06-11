@@ -8,7 +8,7 @@ This repository is the source of truth for the org-level Warden workflow.
 - Org base Warden config: `./warden-base.toml`
 - Intended host repository: `Fields-Education/.github`
 - Intended ruleset target: organization repositories on their default branch
-- Default Warden action parallelism: `parallel: 8`
+- Default Warden action parallelism: `parallel: 4`
 
 The workflow follows the Warden org setup pattern:
 
@@ -20,7 +20,104 @@ The workflow follows the Warden org setup pattern:
 - the workflow passes `base-config-path: .warden-org/warden-base.toml` so the org base config is merged with repository overlays
 - the workflow installs Node 24 before running Warden because Warden's `v0.34.x` action bundle preloads the Pi runtime, whose dependencies require Node APIs not present in Node 20
 
-No custom skip step is included on purpose.
+## Split Analyze and Report
+
+Since Warden `0.38.x` the workflow runs the action twice in the same job:
+
+- `mode: analyze` runs the skills and writes a structured findings file. It does
+  not create checks, post comments, or resolve stale comments.
+- the GitHub App token is minted after analysis completes, so the 1-hour
+  installation token is always fresh for the reporting phase (the old layout
+  minted it before a potentially 60-minute analysis)
+- `mode: report` re-reads the merged config from the checkout and receives the
+  reporting inputs (`base-config-path`, `report-on`, `request-changes`). It
+  creates completed check runs and posts or resolves review comments.
+
+Because analyze mode creates no check runs and report mode only creates
+completed ones, there is no `in_progress` window for Warden checks. The old
+`cleanup-warden-checks` job that completed stale checks after failures and
+cancellations was removed for that reason.
+
+## Skipping Warden
+
+Three gates run before analysis, all evaluated against live PR state when the
+job starts:
+
+- Draft pull requests are skipped automatically.
+- A `warden:off` or `reviewer:off` label on the pull request disables Warden
+  (case-insensitive). The label takes precedence over comment commands — while
+  it is present, `/warden run` comments are not consulted; remove the label to
+  re-enable. Applying labels requires triage permission or higher.
+- An authorized comment containing the line `/warden skip` (or
+  `/reviewer skip`) disables Warden for the pull request. `/warden run`,
+  `/warden allow`, `/warden resume`, and the `/reviewer` equivalents re-enable
+  it. The last command wins, in comment creation order, regardless of prefix.
+
+The `reviewer:off` label and `/reviewer` prefix are shared with the org's
+opencode-based review system so one label or comment can address both
+reviewers.
+
+Command rules:
+
+- only comments from authors with `OWNER`, `MEMBER`, or `COLLABORATOR`
+  association count
+- matching is case-insensitive and the command must be on its own line
+- only pull request conversation comments are scanned, not review-thread
+  comments or review bodies
+
+A skipped run still completes successfully, so the required-workflow ruleset is
+satisfied — `/warden skip` makes the check green without analysis.
+
+Caveat: required workflows installed by org rulesets only trigger on default
+`pull_request` activity (opened, synchronize, reopened); `issue_comment`,
+`labeled`, and `unlabeled` events never trigger them in target repositories.
+After commenting a command or changing a skip label, re-run the Warden check
+from the Checks UI (or push a new commit) for it to take effect. If an
+analysis is already running on a PR that is too large to finish, cancel the
+run first, then re-run it after commenting or labeling.
+
+In repositories that consume this workflow directly through their own workflow
+file (and in this repository itself), the `labeled` and `unlabeled` trigger
+types make label changes take effect immediately: applying `warden:off` starts
+a new run that passes right away, and the concurrency group cancels any
+analysis already in flight.
+
+## Comment Command Automation
+
+`./.github/workflows/review-commands.yml` removes the manual re-run step. It
+listens for new pull request comments and, for authorized commands
+(`/warden`, `/reviewer`, or `/opencode` followed by `skip`, `run`, `allow`, or
+`resume`):
+
+1. adds or removes the matching label (`warden:off`, `reviewer:off`,
+   `opencode:off`), creating it first if the repository does not have it
+2. reacts to the comment with an eyes emoji as acknowledgement
+3. re-syncs each affected review workflow: when `warden:off` or `reviewer:off`
+   changed it targets the Warden workflow, and when `opencode:off` or
+   `reviewer:off` changed it targets the opencode workflow (names configurable
+   via the `warden-workflow-name` and `opencode-workflow-name` inputs,
+   defaulting to `Warden` and `opencode`). For each, it finds the latest run
+   for the PR head SHA, cancels it if it is still in flight, and re-runs it so
+   the gate re-evaluates — this is what makes commands take effect immediately
+   in ruleset-enforced repositories, where label events cannot start new runs.
+   A repository that does not run one of the workflows just logs that no runs
+   were found
+
+Label writes use the Warden GitHub App token when `WARDEN_APP_CLIENT_ID` and
+`WARDEN_PRIVATE_KEY` are configured. That matters because events created with
+`GITHUB_TOKEN` never trigger workflows, so app-less label changes would not
+retrigger Warden in repositories that consume `warden.yml` directly. The
+cancel and re-run calls use `GITHUB_TOKEN` with `actions: write` (explicit
+re-runs are not subject to that suppression).
+
+The workflow runs natively in this repository. Org rulesets cannot inject
+`issue_comment` workflows, so every other repository needs a small caller
+stub — see `./review-commands.md` for the stub, inputs, and verification
+steps.
+
+Repositories without the stub keep the fallback behavior: commands and labels
+are still honored by the Warden gate, but take effect on the next push or a
+manual re-run from the Checks UI.
 
 ## Preserved Behavior
 
