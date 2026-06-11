@@ -53,7 +53,7 @@ jobs:
               | split("\n")[]
               | gsub("^\\s+|\\s+$"; "")
               | ascii_downcase
-              | select(test("^/(warden|reviewer)\\s+(skip|run|allow)$"))
+              | select(test("^/(warden|reviewer)\\s+(skip|run|allow|resume)$"))
               | sub("^/(warden|reviewer)\\s+"; "")
             ' | tail -n 1)"
 

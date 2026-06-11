@@ -46,10 +46,10 @@ job starts:
 - Draft pull requests are skipped automatically.
 - An authorized comment containing the line `/warden skip` (or
   `/reviewer skip`) disables Warden for the pull request. `/warden run`,
-  `/warden allow`, and the `/reviewer` equivalents re-enable it. The last
-  command wins, in comment creation order, regardless of prefix. The
-  `/reviewer` prefix is shared with the org's opencode-based review system so
-  one comment can address both reviewers.
+  `/warden allow`, `/warden resume`, and the `/reviewer` equivalents re-enable
+  it. The last command wins, in comment creation order, regardless of prefix.
+  The `/reviewer` prefix is shared with the org's opencode-based review system
+  so one comment can address both reviewers.
 
 Command rules:
 
