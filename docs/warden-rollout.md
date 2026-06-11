@@ -92,10 +92,16 @@ listens for new pull request comments and, for authorized commands
 1. adds or removes the matching label (`warden:off`, `reviewer:off`,
    `opencode:off`), creating it first if the repository does not have it
 2. reacts to the comment with an eyes emoji as acknowledgement
-3. when `warden:off` or `reviewer:off` changed, finds the latest Warden run
+3. re-syncs each affected review workflow: when `warden:off` or `reviewer:off`
+   changed it targets the Warden workflow, and when `opencode:off` or
+   `reviewer:off` changed it targets the opencode workflow (names configurable
+   via the `warden-workflow-name` and `opencode-workflow-name` inputs,
+   defaulting to `Warden` and `opencode`). For each, it finds the latest run
    for the PR head SHA, cancels it if it is still in flight, and re-runs it so
    the gate re-evaluates — this is what makes commands take effect immediately
-   in ruleset-enforced repositories, where label events cannot start new runs
+   in ruleset-enforced repositories, where label events cannot start new runs.
+   A repository that does not run one of the workflows just logs that no runs
+   were found
 
 Label writes use the Warden GitHub App token when `WARDEN_APP_CLIENT_ID` and
 `WARDEN_PRIVATE_KEY` are configured. That matters because events created with

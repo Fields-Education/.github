@@ -12,10 +12,15 @@ on:
   workflow_call:
     inputs:
       warden-workflow-name:
-        description: Name of the required review workflow whose runs are cancelled and re-run after a relevant label change
+        description: Name of the Warden workflow whose runs are cancelled and re-run when warden:off or reviewer:off changes
         type: string
         required: false
         default: Warden
+      opencode-workflow-name:
+        description: Name of the opencode review workflow whose runs are cancelled and re-run when opencode:off or reviewer:off changes
+        type: string
+        required: false
+        default: opencode
     secrets:
       WARDEN_PRIVATE_KEY:
         description: Private key for the Warden GitHub App; needed so label events retrigger workflows
@@ -64,6 +69,7 @@ jobs:
           add_labels=""
           remove_labels=""
           warden_affected=false
+          opencode_affected=false
           for label in "${!action[@]}"; do
             if [ "${action[${label}]}" = "add" ]; then
               add_labels="${add_labels}${add_labels:+ }${label}"
@@ -72,6 +78,9 @@ jobs:
             fi
             if [ "${label}" = "warden:off" ] || [ "${label}" = "reviewer:off" ]; then
               warden_affected=true
+            fi
+            if [ "${label}" = "opencode:off" ] || [ "${label}" = "reviewer:off" ]; then
+              opencode_affected=true
             fi
           done
 
@@ -85,6 +94,7 @@ jobs:
             echo "add-labels=${add_labels}"
             echo "remove-labels=${remove_labels}"
             echo "warden-affected=${warden_affected}"
+            echo "opencode-affected=${opencode_affected}"
           } >> "$GITHUB_OUTPUT"
 
           echo "Commands parsed. add: [${add_labels}] remove: [${remove_labels}]"
@@ -153,52 +163,67 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}/reactions" \
             -f content=eyes >/dev/null || true
 
-      - name: Sync required Warden check
-        if: steps.cmd.outputs.warden-affected == 'true'
-        timeout-minutes: 5
+      - name: Sync review workflow runs
+        if: steps.cmd.outputs.warden-affected == 'true' || steps.cmd.outputs.opencode-affected == 'true'
+        timeout-minutes: 10
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
-          WORKFLOW_NAME: ${{ inputs.warden-workflow-name || 'Warden' }}
+          WARDEN_AFFECTED: ${{ steps.cmd.outputs.warden-affected }}
+          OPENCODE_AFFECTED: ${{ steps.cmd.outputs.opencode-affected }}
+          WARDEN_WORKFLOW_NAME: ${{ inputs.warden-workflow-name || 'Warden' }}
+          OPENCODE_WORKFLOW_NAME: ${{ inputs.opencode-workflow-name || 'opencode' }}
           OP_STARTED_AT: ${{ steps.apply.outputs.op-started-at }}
         run: |
           set -euo pipefail
 
           head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
 
-          run_info="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head_sha}&per_page=100" \
-            --jq '[.workflow_runs[] | select(.name == env.WORKFLOW_NAME)] | sort_by(.created_at) | last // empty | "\(.id) \(.status) \(.created_at)"')"
-          if [ -z "${run_info}" ]; then
-            echo "No ${WORKFLOW_NAME} runs found for ${head_sha}; nothing to sync."
-            exit 0
-          fi
-          read -r run_id run_status run_created <<< "${run_info}"
+          sync_workflow() {
+            local workflow_name="$1"
+            local run_info run_id run_status run_created
 
-          # ISO 8601 UTC timestamps compare correctly as strings. A run
-          # created after the label change is the labeled/unlabeled-triggered
-          # run in repositories that consume warden.yml directly; it already
-          # reflects the new state.
-          if [[ ! "${run_created}" < "${OP_STARTED_AT}" ]]; then
-            echo "A new ${WORKFLOW_NAME} run was already triggered by the label change; nothing to do."
-            exit 0
-          fi
-
-          if [ "${run_status}" != "completed" ]; then
-            echo "Cancelling in-flight ${WORKFLOW_NAME} run ${run_id}."
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null || true
-            for _ in $(seq 1 18); do
-              sleep 5
-              run_status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
-              if [ "${run_status}" = "completed" ]; then
-                break
-              fi
-            done
-            if [ "${run_status}" != "completed" ]; then
-              echo "::warning::Run ${run_id} did not finish cancelling; re-run the ${WORKFLOW_NAME} check manually from the Checks UI."
-              exit 0
+            run_info="$(WORKFLOW_NAME="${workflow_name}" gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head_sha}&per_page=100" \
+              --jq '[.workflow_runs[] | select(.name == env.WORKFLOW_NAME)] | sort_by(.created_at) | last // empty | "\(.id) \(.status) \(.created_at)"')"
+            if [ -z "${run_info}" ]; then
+              echo "No ${workflow_name} runs found for ${head_sha}; nothing to sync."
+              return 0
             fi
-          fi
+            read -r run_id run_status run_created <<< "${run_info}"
 
-          echo "Re-running ${WORKFLOW_NAME} run ${run_id} so its gate re-evaluates against the new state."
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/rerun" >/dev/null \
-            || echo "::warning::Could not re-run run ${run_id}; re-run the ${WORKFLOW_NAME} check manually from the Checks UI."
+            # ISO 8601 UTC timestamps compare correctly as strings. A run
+            # created after the label change is the labeled/unlabeled-triggered
+            # run in repositories that consume the review workflow directly;
+            # it already reflects the new state.
+            if [[ ! "${run_created}" < "${OP_STARTED_AT}" ]]; then
+              echo "A new ${workflow_name} run was already triggered by the label change; nothing to do."
+              return 0
+            fi
+
+            if [ "${run_status}" != "completed" ]; then
+              echo "Cancelling in-flight ${workflow_name} run ${run_id}."
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null || true
+              for _ in $(seq 1 18); do
+                sleep 5
+                run_status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+                if [ "${run_status}" = "completed" ]; then
+                  break
+                fi
+              done
+              if [ "${run_status}" != "completed" ]; then
+                echo "::warning::Run ${run_id} did not finish cancelling; re-run the ${workflow_name} check manually from the Checks UI."
+                return 0
+              fi
+            fi
+
+            echo "Re-running ${workflow_name} run ${run_id} so its gate re-evaluates against the new state."
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/rerun" >/dev/null \
+              || echo "::warning::Could not re-run run ${run_id}; re-run the ${workflow_name} check manually from the Checks UI."
+          }
+
+          if [ "${WARDEN_AFFECTED}" = "true" ] && [ -n "${WARDEN_WORKFLOW_NAME}" ]; then
+            sync_workflow "${WARDEN_WORKFLOW_NAME}"
+          fi
+          if [ "${OPENCODE_AFFECTED}" = "true" ] && [ -n "${OPENCODE_WORKFLOW_NAME}" ]; then
+            sync_workflow "${OPENCODE_WORKFLOW_NAME}"
+          fi
