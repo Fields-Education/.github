@@ -106,6 +106,7 @@ jobs:
           client-id: ${{ vars.WARDEN_APP_CLIENT_ID }}
           private-key: ${{ secrets.WARDEN_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
 
       - name: Apply label changes
         if: steps.cmd.outputs.any == 'true'
