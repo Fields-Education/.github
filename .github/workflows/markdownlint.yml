@@ -31,6 +31,7 @@ jobs:
         uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install: true
+          install_args: node markdownlint-cli2
 
       - name: Lint Markdown
         run: markdownlint-cli2
