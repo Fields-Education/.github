@@ -1,7 +1,7 @@
 # Review Commands
 
-Pull request comment commands for disabling and re-enabling the automated
-review checks (Warden and opencode) on a single PR. This is the downstream
+Pull request comment commands for controlling the automated review checks
+(Warden and opencode) on a single PR. This is the downstream
 setup guide; the workflow itself lives in this repository at
 `./.github/workflows/review-commands.yml`.
 
@@ -14,28 +14,31 @@ match. One comment can contain several commands on separate lines.
 
 | Command | Effect |
 | --- | --- |
-| `/warden skip` | Disable Warden for this PR (adds `warden:off`) |
-| `/warden run` \| `allow` \| `resume` | Re-enable Warden (removes `warden:off`) |
+| `/warden skip` | Disable Warden for this PR (removes `warden:on`) |
+| `/warden run` \| `allow` \| `resume` | Enable Warden (adds `warden:on`) |
 | `/opencode skip` | Disable opencode review (adds `opencode:off`) |
 | `/opencode run` \| `allow` \| `resume` | Re-enable opencode review (removes `opencode:off`) |
-| `/reviewer skip` | Disable both (adds `reviewer:off`) |
-| `/reviewer run` \| `allow` \| `resume` | Re-enable both (removes `reviewer:off`) |
+| `/reviewer skip` | Disable both (removes `warden:on` and adds `reviewer:off`) |
+| `/reviewer run` \| `allow` \| `resume` | Enable both (adds `warden:on` and removes `reviewer:off`) |
 
 Only comments from authors with the `OWNER`, `MEMBER`, or `COLLABORATOR`
-association count. The last command wins, in comment creation order.
+association count. Within one comment, the last command affecting a given
+label wins.
 
 ## Labels
 
-The commands are backed by labels, which can also be applied directly
-(requires triage permission or higher):
+The commands change labels, which can also be changed directly (requires
+triage permission or higher):
 
-- `warden:off` — Warden is disabled for the PR
+- `warden:on` — Warden is enabled for the PR; without it, Warden skips
 - `opencode:off` — opencode review is disabled for the PR
 - `reviewer:off` — both are disabled for the PR
 
-Labels take precedence over comment commands: while one is present, `run`
-commands for that system are not consulted; remove the label to re-enable.
-Missing labels are created automatically the first time a command needs them.
+Label state is authoritative. Warden requires `warden:on`, and `reviewer:off`
+overrides that opt-in as the shared kill switch. A comment does not control
+Warden by itself; the Review Commands workflow applies the corresponding label
+change. Missing labels are created automatically the first time a command adds
+them.
 
 ## What the workflow does
 
@@ -87,7 +90,7 @@ repository:
 
 | Input | Default | Purpose |
 | --- | --- | --- |
-| `warden-workflow-name` | `Warden` | Workflow whose runs are re-synced when `warden:off` or `reviewer:off` changes |
+| `warden-workflow-name` | `Warden` | Workflow whose runs are re-synced when `warden:on` or `reviewer:off` changes |
 | `opencode-workflow-name` | `opencode` | Workflow whose runs are re-synced when `opencode:off` or `reviewer:off` changes |
 
 A repository that does not run one of the workflows needs no configuration;
@@ -95,17 +98,16 @@ the sync step logs that no runs were found and moves on.
 
 ## Behavior without the stub
 
-Repositories without the stub still honor commands and labels: the Warden
-workflow re-reads comments and labels at the start of every run. The
-difference is timing — without the stub, a command takes effect on the next
-push or a manual re-run of the check from the Checks UI, instead of
-immediately.
+Repositories without the stub still honor labels: the Warden workflow reads
+the live label state at the start of every run. Comment commands are not
+processed without the Review Commands workflow. For org-required workflows,
+manually changing a label takes effect on the next push or a manual re-run of
+the check from the Checks UI.
 
 ## Notes and limitations
 
 - Only newly created comments are processed; editing an old comment does not
-  trigger the workflow (the Warden gate itself still honors edited text on
-  its next run, by creation order).
+  trigger the workflow.
 - Only PR conversation comments count — review-thread comments and review
   bodies are not scanned.
 - Label changes are made with the Warden GitHub App token. Without it the
@@ -116,11 +118,12 @@ immediately.
 
 ## Verifying the setup
 
-On a test pull request:
+On a non-draft test pull request:
 
-1. comment `/warden skip` — expect an eyes reaction, the `warden:off` label,
-   and the Warden check re-running and completing green within a minute
-2. comment `/warden run` — expect the label to disappear and a full Warden
-   analysis to start
-3. optionally repeat with `/reviewer skip` to confirm both labels and both
-   checks respond
+1. without `warden:on`, expect the Warden check to complete green without
+   analysis
+2. comment `/warden run` — expect an eyes reaction, the `warden:on` label,
+   and a full Warden analysis to start
+3. comment `/warden skip` — expect the label to disappear and the Warden check
+   to re-run and complete green without analysis
+4. optionally repeat with `/reviewer skip` to confirm both reviewers respond

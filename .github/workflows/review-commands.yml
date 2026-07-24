@@ -1,7 +1,7 @@
 name: Review Commands
 
 # Maps authorized "/warden|/reviewer|/opencode skip|run|allow|resume" PR
-# comments to the warden:off / reviewer:off / opencode:off labels, then
+# comments to the warden:on / reviewer:off / opencode:off labels, then
 # cancels and re-runs the required Warden check so the command takes effect
 # without a manual re-run. Runs natively on comments in this repository and
 # is reusable from other repositories via workflow_call.
@@ -12,7 +12,7 @@ on:
   workflow_call:
     inputs:
       warden-workflow-name:
-        description: Name of the Warden workflow whose runs are cancelled and re-run when warden:off or reviewer:off changes
+        description: Name of the Warden workflow whose runs are cancelled and re-run when warden:on or reviewer:off changes
         type: string
         required: false
         default: Warden
@@ -57,10 +57,16 @@ jobs:
           while IFS= read -r raw; do
             line="$(printf '%s' "${raw}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
             case "${line}" in
-              "/warden skip") action["warden:off"]=add ;;
-              "/warden run"|"/warden allow"|"/warden resume") action["warden:off"]=remove ;;
-              "/reviewer skip") action["reviewer:off"]=add ;;
-              "/reviewer run"|"/reviewer allow"|"/reviewer resume") action["reviewer:off"]=remove ;;
+              "/warden skip") action["warden:on"]=remove ;;
+              "/warden run"|"/warden allow"|"/warden resume") action["warden:on"]=add ;;
+              "/reviewer skip")
+                action["warden:on"]=remove
+                action["reviewer:off"]=add
+                ;;
+              "/reviewer run"|"/reviewer allow"|"/reviewer resume")
+                action["warden:on"]=add
+                action["reviewer:off"]=remove
+                ;;
               "/opencode skip") action["opencode:off"]=add ;;
               "/opencode run"|"/opencode allow"|"/opencode resume") action["opencode:off"]=remove ;;
             esac
@@ -76,7 +82,7 @@ jobs:
             else
               remove_labels="${remove_labels}${remove_labels:+ }${label}"
             fi
-            if [ "${label}" = "warden:off" ] || [ "${label}" = "reviewer:off" ]; then
+            if [ "${label}" = "warden:on" ] || [ "${label}" = "reviewer:off" ]; then
               warden_affected=true
             fi
             if [ "${label}" = "opencode:off" ] || [ "${label}" = "reviewer:off" ]; then
@@ -135,15 +141,27 @@ jobs:
 
           for label in "${labels_to_add[@]}"; do
             case "${label}" in
-              warden:off) desc="Automatic warden reviews are disabled/bypassed" ;;
-              reviewer:off) desc="Automatic reviews (warden and opencode) are disabled/bypassed" ;;
-              opencode:off) desc="Automatic opencode reviews are disabled/bypassed" ;;
-              *) desc="Review control label" ;;
+              warden:on)
+                color="0e8a16"
+                desc="Automatic Warden reviews are enabled"
+                ;;
+              reviewer:off)
+                color="d93f0b"
+                desc="Automatic reviews (Warden and opencode) are disabled/bypassed"
+                ;;
+              opencode:off)
+                color="d93f0b"
+                desc="Automatic opencode reviews are disabled/bypassed"
+                ;;
+              *)
+                color="d93f0b"
+                desc="Review control label"
+                ;;
             esac
             # Ensure the label exists; tolerate it already existing so repo
             # customizations of color or description are preserved.
             gh api --method POST "repos/${GITHUB_REPOSITORY}/labels" \
-              -f "name=${label}" -f "color=d93f0b" -f "description=${desc}" >/dev/null 2>&1 || true
+              -f "name=${label}" -f "color=${color}" -f "description=${desc}" >/dev/null 2>&1 || true
             echo "Adding label ${label}."
             gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" \
               -f "labels[]=${label}" >/dev/null
