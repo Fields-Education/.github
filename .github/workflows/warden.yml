@@ -111,7 +111,7 @@ jobs:
         run: npx --yes @sentry/dotagents install
 
       - name: Analyze
-        uses: Destreyf/warden@incremental-action-dist # incremental-action-dist
+        uses: Destreyf/warden@29a6deec3bf29657563e29a9faed25c96b4d7846 # incremental Warden 0.43.0
         if: steps.pr-state.outputs.proceed == 'true'
         id: warden-analyze
         timeout-minutes: 105
@@ -151,7 +151,7 @@ jobs:
           repositories: ${{ github.event.repository.name }}
 
       - name: Report
-        uses: Destreyf/warden@incremental-action-dist # incremental-action-dist
+        uses: Destreyf/warden@29a6deec3bf29657563e29a9faed25c96b4d7846 # incremental Warden 0.43.0
         if: steps.pr-state.outputs.proceed == 'true'
         id: warden-report
         timeout-minutes: 10
