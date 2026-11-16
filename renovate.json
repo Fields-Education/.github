@@ -3,7 +3,9 @@
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "description": "Renovate configuration for Fields-Education/.github.",
   "configMigration": true,
-  "dependencyDashboard": true,
+  "dependencyDashboard": {
+    "enabled": true
+  },
   "automerge": false,
   "semanticCommits": "enabled",
   "semanticCommitType": "chore",
