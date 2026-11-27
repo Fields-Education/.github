@@ -1,5 +1,5 @@
 [tools]
 node = "26.13.1"
-"npm:@sentry/warden" = "0.54.0"
+"npm:@sentry/warden" = "0.55.0"
 markdownlint-cli2 = "0.24.2"
 conform = "0.1.0-alpha.33"
